@@ -61,7 +61,7 @@ const HomePage = () => {
       <header className="header">
         <div className="header-left">
           <img src={CompanyLogo} alt="Loans24 Logo" className="company-logo" />
-          <h1 className="company-name">Loans24</h1>
+          {/* <h1 className="company-name">Loans24</h1> */}
         </div>
         
         <div className="header-right">

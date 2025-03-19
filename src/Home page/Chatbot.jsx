@@ -4,7 +4,7 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import './Chatbot.css';
 import DynamicForm from './DynamicForm';
-const API_URL =process.env.BASE_API_URL;
+const API_URL = process.env.BASE_API_URL;
 
 const Chatbot = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -17,6 +17,7 @@ const Chatbot = () => {
   const [selectedLoanId, setSelectedLoanId] = useState(null);
   const [selectedBankId, setSelectedBankId] = useState(null);
   const [expandedEmiId, setExpandedEmiId] = useState(null);
+  const [initialFetched, setInitialFetched] = useState(false);
   const messagesEndRef = useRef(null);
   const { userDetails } = useContext(UserContext);
   const userId = userDetails?.id;
@@ -36,16 +37,14 @@ const Chatbot = () => {
     }
   };
 
-// Add an initialFetched flag to your state
-const [initialFetched, setInitialFetched] = useState(false);
+  useEffect(() => {
+    // When userDetails and userId become available and chatbot is open, fetch the initial response if not done already.
+    if (userDetails?.id && isOpen && !initialFetched) {
+      fetchInitialResponse();
+      setInitialFetched(true);
+    }
+  }, [userDetails, isOpen, initialFetched]);
 
-useEffect(() => {
-  // When userDetails and userId become available and chatbot is open, fetch the initial response if not done already.
-  if (userDetails?.id && isOpen && !initialFetched) {
-    fetchInitialResponse();
-    setInitialFetched(true);
-  }
-}, [userDetails, isOpen, initialFetched]);
   // Modify the toggleChatbot function to check for userId but not call fetchInitialResponse
   const toggleChatbot = () => {
     if (!userDetails?.id) {
@@ -74,10 +73,7 @@ useEffect(() => {
     try {
       setLoading(true);
       
-      // Determine which additional parameter to use (bankId has priority over loanId)
       const additionalParam = additional || selectedBankId || selectedLoanId;
-      
-      // Build URL with parameters
       let url = `${API_URL}/api/userbot/query?prompt_id=${promptId}&userId=${userId}`;
       if (additionalParam) {
         url += `&additional=${additionalParam}`;
@@ -102,11 +98,8 @@ useEffect(() => {
       // Process successful response
       if (response.data.success) {
         const { data } = response.data;
-        
-        // Create message object based on response type
         let botMessage;
         
-        // Check if this is an EMI schedule response
         if (data.extraAction && (data.extraAction.overdue !== undefined || 
             data.extraAction.lastPaid !== undefined || 
             data.extraAction.pending !== undefined)) {
@@ -134,15 +127,10 @@ useEffect(() => {
           setHistory(prev => [...prev, currentPromptId]);
         }
 
-        // Before updating the messages and history,
-        // store the followups of the current message as the previous options
-        // if (promptId !== 0 && currentPromptId !== promptId) {
-        //   const lastMessage = messages[messages.length - 1];
-        //   if (lastMessage && lastMessage.followups && lastMessage.followups.length > 0) {
-        //     setPreviousOptions(lastMessage.followups);
-        //   }
-        //   setHistory(prev => [...prev, currentPromptId]);
-        // }
+        // Only add to history if the response has follow-ups
+        if (data.followups && data.followups.length > 0) {
+          setHistory(prev => [...prev, currentPromptId]);
+        }
         
         setMessages(prev => [...prev, botMessage]);
         setCurrentPromptId(promptId);
@@ -166,43 +154,65 @@ useEffect(() => {
     }
   };
 
-const handleFollowupClick = async (followup) => {
-  // Add user message to show what was selected
-  setMessages(prev => [...prev, { type: 'user', text: followup.text }]);
-  
-  // Check if this requires a form for data input
-  if (followup.httpRequestType === 'PUT' || followup.httpRequestType === 'POST') {
-    if (followup.fieldsToAdd) {
-      // Use the fieldsToAdd directly from the API response
-      setUpdateConfig({
-        promptId: followup.promptId,
-        method: followup.httpRequestType,
-        fields: followup.fieldsToAdd
-      });
-    } else {
-      // Fallback to regex extraction for backward compatibility
-      const regex = /\[(.*?)\]/;
-      const match = followup.text.match(regex);
-      
-      if (match && match[1]) {
-        const fields = match[1].split('/').map(field => field.trim());
+  const handleFollowupClick = async (followup) => {
+    // Add user message to show what was selected
+    setMessages(prev => [...prev, { type: 'user', text: followup.text }]);
+    
+    // Check if this requires a form for data input
+    if (followup.httpRequestType === 'PUT' || followup.httpRequestType === 'POST') {
+      if (followup.fieldsToAdd) {
+        // Use the fieldsToAdd directly from the API response
         setUpdateConfig({
           promptId: followup.promptId,
           method: followup.httpRequestType,
-          fields: fields
+          fields: followup.fieldsToAdd
         });
       } else {
-        // No form needed, proceed with request
-        const additionalParam = selectedBankId || selectedLoanId;
-        fetchResponse(followup.promptId, null, followup.httpRequestType, additionalParam);
+        // Fallback to regex extraction for backward compatibility
+        // Update the code that handles the regex extraction and form configuration
+          const regex = /\[(.*?)\]/;
+          const match = followup.text.match(regex);
+
+          if (match && match[1]) {
+            const fieldsText = match[1];
+            const fields = [];
+            
+            // Check if Bank Account Type is mentioned
+            if (fieldsText.includes("Bank Account Type")) {
+              // Add the accountType as an object with predefined options
+              fields.push({ accountType: ["SAVINGS", "CURRENT"] });
+            }
+            
+            // Process other fields as simple text fields
+            fieldsText.split('/').forEach(field => {
+              field = field.trim();
+              if (field === "Bank Account Type") {
+                // Already handled above
+              } else if (field === "Account Holder Name") {
+                fields.push("accountHolderName");
+              } else {
+                // For any other fields, add them as is
+                fields.push(field);
+              }
+            });
+            
+            setUpdateConfig({
+              promptId: followup.promptId,
+              method: followup.httpRequestType,
+              fields: fields
+            });
+          } else {
+            // No form needed, proceed with request
+            const additionalParam = selectedBankId || selectedLoanId;
+            fetchResponse(followup.promptId, null, followup.httpRequestType, additionalParam);
+          }
       }
+    } else {
+      // Simple GET request with optional additional parameter
+      const additionalParam = selectedBankId || selectedLoanId;
+      fetchResponse(followup.promptId, null, 'GET', additionalParam);
     }
-  } else {
-    // Simple GET request with optional additional parameter
-    const additionalParam = selectedBankId || selectedLoanId;
-    fetchResponse(followup.promptId, null, 'GET', additionalParam);
-  }
-};
+  };
 
   const handleButtonClick = handleFollowupClick;
 
@@ -216,6 +226,14 @@ const handleFollowupClick = async (followup) => {
     const date = new Date(dateString);
     const options = { year: 'numeric', month: 'short', day: 'numeric' };
     return date.toLocaleDateString('en-US', options);
+  };
+
+  // Format a key from camelCase to Title Case
+  const formatKey = (key) => {
+    // Handle camelCase to Title Case conversion
+    return key
+      .replace(/([A-Z])/g, ' $1') // Insert a space before all uppercase letters
+      .replace(/^./, firstChar => firstChar.toUpperCase()); // Capitalize the first letter
   };
 
   const handleFormSubmit = async (formData) => {
@@ -261,36 +279,174 @@ const handleFollowupClick = async (followup) => {
     }
   };
 
-const handleBackClick = () => {
-  if (history.length > 0) {
-    const newHistory = [...history];
-    const lastPromptId = newHistory.pop();
-    setHistory(newHistory);
-    setMessages(prevMessages => prevMessages.slice(0, -1));
+  const handleBackClick = () => {
+    if (history.length > 0) {
+      const newHistory = [...history];
+      const lastPromptId = newHistory.pop();
+      setHistory(newHistory);
+      // setMessages(prevMessages => prevMessages.slice(0, -1));
 
-    if (selectedLoanId || selectedBankId) {
+      if (selectedLoanId || selectedBankId) {
+        setSelectedLoanId(null);
+        setSelectedBankId(null);
+      }
+      fetchResponse(lastPromptId);
+    }
+  };
+
+  const handleMainMenuClick = () => {
+    if (messages.length > 0) {
+      setHistory([]);
       setSelectedLoanId(null);
       setSelectedBankId(null);
+      fetchResponse(0);
     }
-    fetchResponse(lastPromptId);
-    // setCurrentPromptId(lastPromptId);
-  }
-};
-
-const handleMainMenuClick = () => {
-  if (messages.length > 0) {
-    setHistory([]);
-    setSelectedLoanId(null);
-    setSelectedBankId(null);
-    fetchResponse(0);
-  }
-};
+  };
 
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
+
+  // Render loan selection boxes
+  const renderLoanBoxes = (loans, displayOnly = false) => {
+    if (!loans || loans.length === 0) return null;
+    
+    // For display-only case (showing loan type and status)
+    if (displayOnly || (loans.length > 0 && loans[0].hasOwnProperty('status') && !loans[0].hasOwnProperty('loan_id'))) {
+      return (
+        <div className="loan-status-grid">
+          {loans.map((loan, index) => (
+            <div key={index} className="loan-status-box">
+              <div className="loan-type">
+                {loan.type.split('_').map(word => word.charAt(0) + word.substring(1).toLowerCase()).join(' ')}
+              </div>
+              <div className={`loan-status ${loan.status.toLowerCase()}`}>
+                {loan.status.charAt(0) + loan.status.substring(1).toLowerCase()}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    
+    // For selectable loan buttons
+    return (
+      <div className="loan-buttons-grid">
+        {loans.map((loan, index) => (
+          <button 
+            key={index} 
+            className={`loan-select-button ${loan.loan_id === selectedLoanId ? 'selected' : ''}`}
+            onClick={() => setSelectedLoanId(loan.loan_id)}
+          >
+            {loan.type.split('_').map(word => word.charAt(0) + word.substring(1).toLowerCase()).join(' ')}
+            {loan.loan_id === selectedLoanId && (
+              <span className="loan-selected-indicator">✓</span>
+            )}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  // Render bank selection buttons
+  const renderBankButtons = (banks) => {
+    if (!banks || banks.length === 0) return null;
+    
+    return (
+      <div className="loan-buttons-grid">
+        {banks.map((bank, index) => (
+          <button 
+            key={index} 
+            className={`loan-select-button ${bank.bankId === selectedBankId ? 'selected' : ''}`}
+            onClick={() => setSelectedBankId(bank.bankId)}
+          >
+            {bank.bankName}: {bank.accountNumber}
+            {bank.bankId === selectedBankId && (
+              <span className="loan-selected-indicator">✓</span>
+            )}
+          </button>
+        ))}
+      </div>
+    );
+  };
+  
+  // Render followup buttons only if a selection has been made
+  const renderFollowupButtons = (followups, isLoanContext, isBankContext) => {
+    if (!followups || followups.length === 0) return null;
+    
+    // For loan context, only show if a loan is selected
+    if (isLoanContext && !selectedLoanId) {
+      return (
+        <div className="followup-instructions">
+          Please select a loan to continue
+        </div>
+      );
+    }
+    
+    // For bank context, only show if a bank is selected
+    if (isBankContext && !selectedBankId) {
+      return (
+        <div className="followup-instructions">
+          Please select a bank account to continue
+        </div>
+      );
+    }
+    
+    // Otherwise, render enabled followup buttons
+    return (
+      <div className="followup-buttons">
+        {followups.map((followup, idx) => (
+          <button 
+            key={idx} 
+            onClick={() => {
+              // Determine which handler to use based on context
+              const handler = isLoanContext || isBankContext 
+                ? handleFollowupClick 
+                : handleButtonClick;
+              
+              // Add the relevant ID to the followup data
+              const enhancedFollowup = {
+                ...followup,
+                additionalParam: isLoanContext 
+                  ? selectedLoanId 
+                  : isBankContext 
+                    ? selectedBankId 
+                    : null
+              };
+              
+              handler(enhancedFollowup);
+            }}
+            className="followup-button"
+          >
+            {followup.text.replace(/\[.*?\]/g, '')}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  // Render extra action content
+  const renderExtraAction = (extraAction) => {
+    if (!extraAction) return null;
+    
+    // If extraAction is a string or number, return it directly
+    if (typeof extraAction !== 'object' || extraAction === null) {
+      return <span>{extraAction}</span>;
+    }
+    
+    // If extraAction is an object, format each key and display with its value
+    return (
+      <>
+        {Object.entries(extraAction).map(([key, value]) => (
+          <div key={key} className="extra-action-item">
+            <strong>{formatKey(key)}:</strong> {value}
+          </div>
+        ))}
+      </>
+    );
+  };
 
   const renderEmiSchedule = (emiSchedule) => {
     if (!emiSchedule) return null;
@@ -414,83 +570,8 @@ const handleMainMenuClick = () => {
     );
   };
 
-  // Render loan selection boxes
-  const renderLoanBoxes = (loans, displayOnly = false) => {
-    if (!loans || loans.length === 0) return null;
-    
-    // For display-only case (showing loan type and status)
-    if (displayOnly || (loans.length > 0 && loans[0].hasOwnProperty('status') && !loans[0].hasOwnProperty('loan_id'))) {
-      return (
-        <div className="loan-status-grid">
-          {loans.map((loan, index) => (
-            <div key={index} className="loan-status-box">
-              <div className="loan-type">
-                {loan.type.split('_').map(word => word.charAt(0) + word.substring(1).toLowerCase()).join(' ')}
-              </div>
-              <div className={`loan-status ${loan.status.toLowerCase()}`}>
-                {loan.status.charAt(0) + loan.status.substring(1).toLowerCase()}
-              </div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-    
-    // For selectable loan buttons
-    return (
-      <div className="loan-buttons-grid">
-        {loans.map((loan, index) => (
-          <button 
-            key={index} 
-            className={`loan-select-button ${loan.loan_id === selectedLoanId ? 'selected' : ''}`}
-            onClick={() => setSelectedLoanId(loan.loan_id)}
-          >
-            {loan.type.split('_').map(word => word.charAt(0) + word.substring(1).toLowerCase()).join(' ')}
-            {loan.loan_id === selectedLoanId && (
-              <span className="loan-selected-indicator">✓</span>
-            )}
-          </button>
-        ))}
-      </div>
-    );
-  };
-
-  // Render bank selection buttons
-  const renderBankButtons = (banks) => {
-    if (!banks || banks.length === 0) return null;
-    
-    return (
-      <div className="loan-buttons-grid">
-        {banks.map((bank, index) => (
-          <button 
-            key={index} 
-            className={`loan-select-button ${bank.bankId === selectedBankId ? 'selected' : ''}`}
-            onClick={() => setSelectedBankId(bank.bankId)}
-          >
-            {bank.bankName}: {bank.accountNumber}
-            {bank.bankId === selectedBankId && (
-              <span className="loan-selected-indicator">✓</span>
-            )}
-          </button>
-        ))}
-      </div>
-    );
-  };
-
   return (
     <div className="chatbot-container">
-      {/* Chatbot toggle button - only visible when chat is closed */}
-      {/* {!isOpen && (
-        <button 
-          className="chatbot-button"
-          onClick={toggleChatbot}
-        >
-          <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
-        </button>
-      )} */}
-
       {/* Chatbot toggle button with animation */}
       {userDetails?.id && (
         <button 
@@ -524,19 +605,7 @@ const handleMainMenuClick = () => {
                   {message.extraAction && message.extraAction.bankDetails ? (
                     <>
                       {renderBankButtons(message.extraAction.bankDetails)}
-                      {message.followups && message.followups.length > 0 && (
-                        <div className="followup-buttons">
-                          {message.followups.map((followup, idx) => (
-                            <button 
-                              key={idx} 
-                              onClick={() => handleFollowupClick(followup)}
-                              className="followup-button"
-                            >
-                              {followup.text.replace(/\[.*?\]/g, '')}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      {renderFollowupButtons(message.followups, false, true)}
                     </>
                   ) : message.extraAction && message.extraAction.loans ? (
                     <>
@@ -547,49 +616,18 @@ const handleMainMenuClick = () => {
                         message.extraAction.loans[0].hasOwnProperty('status') && 
                         !message.extraAction.loans[0].hasOwnProperty('loan_id')
                       )}
-                      {message.followups && message.followups.length > 0 && (
-                        <div className="followup-buttons">
-                          {message.followups.map((followup, idx) => (
-                            <button 
-                              key={idx} 
-                              onClick={() => handleFollowupClick(followup)}
-                              className="followup-button"
-                            >
-                              {followup.text.replace(/\[.*?\]/g, '')}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      {renderFollowupButtons(message.followups, true, false)}
                     </>
                   ) : (
                     <>
                       {/* Render extraAction content for non-loan messages and non-EMI messages */}
                       {message.extraAction && !message.emiSchedule && (
                         <div className="extra-action">
-                          {typeof message.extraAction === 'object'
-                            ? Object.entries(message.extraAction).map(([key, value]) => (
-                                <div key={key} className="extra-action-item">
-                                  <strong>{key}:</strong> {value}
-                                </div>
-                              ))
-                            : <span>{message.extraAction}</span>
-                          }
+                          {renderExtraAction(message.extraAction)}
                         </div>
                       )}
-                      {/* Render followup buttons if available */}
-                      {message.followups && message.followups.length > 0 && (
-                        <div className="followup-buttons">
-                          {message.followups.map((followup, idx) => (
-                            <button 
-                              key={idx} 
-                              onClick={() => handleButtonClick(followup)}
-                              className="followup-button"
-                            >
-                              {followup.text.replace(/\[.*?\]/g, '')}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      {/* Regular followup buttons for standard messages */}
+                      {renderFollowupButtons(message.followups, false, false)}
                     </>
                   )}
                 </div>

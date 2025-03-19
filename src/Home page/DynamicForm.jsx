@@ -10,27 +10,52 @@ const DynamicForm = ({ config, onSubmit, onCancel }) => {
   };
 
   const renderField = (field) => {
-    if (typeof field === 'string') {
+    // Check if the field name (case-insensitive) contains "account type"
+    if (typeof field === 'string' && 
+        (field.toLowerCase().includes('account type') || field.toLowerCase() === 'accounttype')) {
       return (
         <div key={field}>
           <label>{field}</label>
-          <input
-            type="text"
-            placeholder={`Enter ${field}`}
+          <select
             value={formData[field] || ''}
             onChange={(e) => handleChange(field, e.target.value)}
-            required
+            // required
+          >
+            <option value="">Select account type</option>
+            <option value="SAVINGS">SAVINGS</option>
+            <option value="CURRENT">CURRENT</option>
+          </select>
+        </div>
+      );
+    }
+    // Handle all other text fields
+    else if (typeof field === 'string') {
+      // Map display names to field names if needed
+      const fieldKey = field.toLowerCase().includes('holder name') ? 'accountHolderName' : field;
+      const displayName = field;
+      
+      return (
+        <div key={fieldKey}>
+          <label>{displayName}</label>
+          <input
+            type="text"
+            placeholder={`Enter ${displayName}`}
+            value={formData[fieldKey] || ''}
+            onChange={(e) => handleChange(fieldKey, e.target.value)}
+            // required
           />
         </div>
       );
-    } else if (typeof field === 'object') {
+    } 
+    // Handle object field format (for backward compatibility)
+    else if (typeof field === 'object') {
       return Object.keys(field).map(fieldName => (
         <div key={fieldName}>
           <label>{fieldName}</label>
           <select
             value={formData[fieldName] || ''}
             onChange={(e) => handleChange(fieldName, e.target.value)}
-            required
+            // required
           >
             <option value="">Select an option</option>
             {field[fieldName].map(option => (
@@ -47,15 +72,34 @@ const DynamicForm = ({ config, onSubmit, onCancel }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitting(true);
-    await onSubmit(formData);
-    setSubmitting(false);
+    
+    // Check if at least one field has been filled
+    const hasAtLeastOneField = Object.values(formData).some(value => value !== undefined && value !== '');
+    
+    if (hasAtLeastOneField) {
+      setSubmitting(true);
+      
+      // Only include fields that have values when submitting
+      const nonEmptyFormData = Object.fromEntries(
+        Object.entries(formData).filter(([_, value]) => value !== undefined && value !== '')
+      );
+      
+      await onSubmit(nonEmptyFormData);
+      setSubmitting(false);
+    } else {
+      // Optional: Show an alert if no fields are filled
+      alert('Please fill at least one field');
+    }
   };
+
+  // Determine if this is an add or update form based on the HTTP method
+  const isAddForm = method === 'POST';
+  const formTitle = isAddForm ? "Fill details to Add" : "Fill details to Update";
 
   return (
     <div className="dynamic-form-overlay">
       <form onSubmit={handleSubmit} className="dynamic-form">
-        <h2>Fill details to update</h2>
+        <h2>{formTitle}</h2>
         {promptText && <h3>{promptText}</h3>}
         {fields.map(field => renderField(field))}
         <div className="button-group">
@@ -68,6 +112,7 @@ const DynamicForm = ({ config, onSubmit, onCancel }) => {
         </div>
       </form>
       <style>{`
+        /* CSS remains unchanged */
         .dynamic-form-overlay {
           position: fixed;
           top: 0;

@@ -183,7 +183,8 @@
 
 .back-buttons {
     display: flex;
-    gap: 10px;
+    justify-content: space-between;
+    gap: 0px;
     margin-top: 10px;
 }
   
