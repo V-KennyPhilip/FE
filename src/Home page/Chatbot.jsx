@@ -4,6 +4,7 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import './Chatbot.css';
 import DynamicForm from './DynamicForm';
+import { FaRobot, FaPaperPlane, FaTimes, FaSearch, FaPlus, FaChartBar, FaFileExcel, FaBars, FaComment } from "react-icons/fa";
 const API_URL = process.env.BASE_API_URL;
 
 const Chatbot = () => {
@@ -21,6 +22,14 @@ const Chatbot = () => {
   const messagesEndRef = useRef(null);
   const { userDetails } = useContext(UserContext);
   const userId = userDetails?.id;
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
+  const [feedbackSubmitStatus, setFeedbackSubmitStatus] = useState(null);
+
+  const toggleSidebar = () => {
+    setIsSidebarOpen(!isSidebarOpen);
+  };
 
   const fetchInitialResponse = async () => {
     try {
@@ -303,6 +312,43 @@ const Chatbot = () => {
     }
   };
 
+
+  // FIXED FEEDBACK SUBMISSION
+  const handleFeedbackSubmit = async () => {
+    if (!feedbackText.trim() || !userId) {
+      setFeedbackSubmitStatus('Please enter feedback text');
+      return;
+    }
+    
+    try {
+      // Use the same API_URL from the environment variable
+      await axios.post(`${API_URL}/api/userbot/feedback`, {
+        userId: userId,
+        feedback: feedbackText,
+        conversationId: conversationId
+      }, {
+        withCredentials: true,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      // Reset and close form after submission
+      setFeedbackText("");
+      setFeedbackSubmitStatus('success');
+      
+      // Close the feedback modal after a brief delay
+      setTimeout(() => {
+        setIsFeedbackOpen(false);
+        setFeedbackSubmitStatus(null);
+      }, 1500);
+      
+    } catch (error) {
+      console.error("Error submitting feedback:", error);
+      setFeedbackSubmitStatus('Failed to submit feedback. Please try again later.');
+    }
+  };
+
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -371,7 +417,7 @@ const Chatbot = () => {
       </div>
     );
   };
-  
+
   // Render followup buttons only if a selection has been made
   const renderFollowupButtons = (followups, isLoanContext, isBankContext) => {
     if (!followups || followups.length === 0) return null;
@@ -587,9 +633,33 @@ const Chatbot = () => {
       {/* Chatbot dialog - only visible when chat is open */}
       {isOpen && (
         <div className="chatbot-dialog">
-          <div className="chatbot-header">
-            <h3>Chat Support</h3>
-            <button className="close-button" onClick={toggleChatbot}>×</button>
+          <div className="chat-header">
+            <div className="header-left">
+              <button 
+                className="sidebar-toggle"
+                onClick={toggleSidebar}
+                aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+              >
+                <FaBars />
+              </button>
+              <div className="chat-title">Loanie</div>
+            </div>
+            <div className="header-right">
+              <button 
+                onClick={() => setIsFeedbackOpen(true)} 
+                className="feedback-button"
+                aria-label="Provide feedback"
+              >
+                <FaComment />
+              </button>
+              <button 
+                onClick={() => setIsOpen(false)} 
+                className="close-button"
+                aria-label="Close chat"
+              >
+                <FaTimes />
+              </button>
+            </div>
           </div>
 
           <div className="chatbot-messages">
@@ -634,17 +704,6 @@ const Chatbot = () => {
               </div>
             ))}
             
-            {/* Loading indicator */}
-            {loading && (
-              <div className="message bot">
-                <div className="typing-indicator">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
-              </div>
-            )}
-            
             {/* Back and Main Menu buttons */}
             <div className="navigation-buttons">
               <button 
@@ -662,14 +721,80 @@ const Chatbot = () => {
                 Main Menu
               </button>
             </div>
+            
+            {/* Loading indicator */}
+            {loading && (
+              <div className="message bot">
+                <div className="typing-indicator">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
+            )}
+            
             <div ref={messagesEndRef} />
           </div>
+          
           {updateConfig && (
             <DynamicForm 
               config={updateConfig} 
               onSubmit={handleFormSubmit} 
               onCancel={() => setUpdateConfig(null)} 
             />
+          )}
+          
+          {/* Feedback Modal */}
+          {isFeedbackOpen && (
+            <div className="feedback-modal-overlay">
+              <div className="feedback-modal">
+                <div className="feedback-modal-header">
+                  <h3>Share Your Feedback</h3>
+                  <button 
+                    onClick={() => {
+                      setIsFeedbackOpen(false);
+                      setFeedbackSubmitStatus(null);
+                    }}
+                    className="close-button"
+                  >
+                    <FaTimes />
+                  </button>
+                </div>
+                <div className="feedback-modal-body">
+                  <textarea
+                    value={feedbackText}
+                    onChange={(e) => setFeedbackText(e.target.value)}
+                    placeholder="Please share your experience or suggestions..."
+                    className="feedback-textarea"
+                    rows={5}
+                    disabled={feedbackSubmitStatus === 'success'}
+                  />
+                  {feedbackSubmitStatus && (
+                    <div className={`feedback-status ${feedbackSubmitStatus === 'success' ? 'success' : 'error'}`}>
+                      {feedbackSubmitStatus === 'success' ? 'Thank you for your feedback!' : feedbackSubmitStatus}
+                    </div>
+                  )}
+                </div>
+                <div className="feedback-modal-footer">
+                  <button 
+                    onClick={() => {
+                      setIsFeedbackOpen(false);
+                      setFeedbackSubmitStatus(null);
+                    }}
+                    className="cancel-button"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleFeedbackSubmit}
+                    className="submit-button"
+                    disabled={!feedbackText.trim() || !userId || feedbackSubmitStatus === 'success'}
+                  >
+                    Submit Feedback
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}
