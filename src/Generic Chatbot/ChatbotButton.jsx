@@ -1,33 +1,163 @@
-import React, { useState } from 'react';
-import ChatbotInterface from './ChatbotInterface';
-import './ChatbotButton.css';
+import React, { useState, useEffect } from 'react';
+import { FloatButton, Alert, ConfigProvider, theme as antTheme } from 'antd';
+import { CommentOutlined, CloseOutlined } from '@ant-design/icons';
+// Import the actual ChatbotInterface component from the correct path
+import ChatbotInterface from './ChatbotInterface'; // Make sure this is the correct path
+import { keyframes } from '@emotion/react';
+import styled from '@emotion/styled';
 
-const ChatbotButton = () => {
+// Define animations
+const slideUp = keyframes`
+  from {
+    transform: translateY(100px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+`;
+
+const bounce = keyframes`
+  0%, 20%, 50%, 80%, 100% {transform: translateY(0);}
+  40% {transform: translateY(-5px);}
+  60% {transform: translateY(-2px);}
+`;
+
+// Styled components
+const Container = styled.div`
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+`;
+
+const StyledFloatButton = styled(FloatButton)`
+  width: 60px !important;
+  height: 60px !important;
+  opacity: ${props => props.$isLoaded ? 1 : 0};
+  pointer-events: ${props => props.$isLoaded ? 'auto' : 'none'};
+  transform: ${props => props.$isOpen ? 'translateX(-755px) !important' : 
+    props.$isLoaded ? 'translateY(0) !important' : 'translateY(100px) !important'};
+  animation: ${props => props.$isLoaded && !props.$wasLoaded ? slideUp : 'none'} 0.5s ease-in-out;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+
+  .ant-float-btn-body {
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  .ant-float-btn-content {
+    width: 100% !important;
+    height: 100% !important;
+  }
+`;
+
+const NotificationWrapper = styled.div`
+  position: fixed;
+  bottom: 90px;
+  right: 20px;
+  max-width: 250px;
+  z-index: 999;
+  animation: ${bounce} 2s ease 1;
+`;
+
+const StyledAlert = styled(Alert)`
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background-color: rgb(194, 207, 43) !important;
+`;
+
+const ChatbotButton = ({ initialData, isDataLoading, onToggle }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [wasLoaded, setWasLoaded] = useState(false);
+  const [showNotification, setShowNotification] = useState(false);
+  const { defaultAlgorithm } = antTheme;
+
+  // Track when the initial data is loaded from the parent component
+  useEffect(() => {
+    if (initialData && !isDataLoading) {
+      setIsLoaded(true);
+      
+      // Show notification a moment after the button appears
+      const timer = setTimeout(() => {
+        setShowNotification(true);
+      }, 500);
+      
+      // Set wasLoaded after animation completes to prevent re-animation
+      const animTimer = setTimeout(() => {
+        setWasLoaded(true);
+      }, 1000);
+      
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(animTimer);
+      };
+    }
+  }, [initialData, isDataLoading]);
 
   const toggleChatbot = () => {
-    setIsOpen(!isOpen);
+    const newState = !isOpen;
+    setIsOpen(newState);
+    
+    // Hide notification when chatbot is opened
+    if (newState) {
+      setShowNotification(false);
+    }
+    
+    // Notify parent component about the state change
+    if (onToggle) {
+      onToggle(newState);
+    }
+  };
+
+  const dismissNotification = () => {
+    setShowNotification(false);
   };
 
   return (
-    <div className="chatbot-container">
-      {isOpen && <ChatbotInterface onClose={toggleChatbot} />}
-      <button 
-        className={`chatbot-toggle-button ${isOpen ? 'toggled' : ''}`}
-        onClick={toggleChatbot}
-      >
-        {isOpen ? (
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M18 6L6 18" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M6 6L18 18" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        ) : (
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M21 11.5C21.0034 12.8199 20.6951 14.1219 20.1 15.3C19.3944 16.7118 18.3098 17.8992 16.9674 18.7293C15.6251 19.5594 14.0782 19.9994 12.5 20C11.1801 20.0035 9.87812 19.6951 8.7 19.1L3 21L4.9 15.3C4.30493 14.1219 3.99656 12.8199 4 11.5C4.00061 9.92179 4.44061 8.37488 5.27072 7.03258C6.10083 5.69028 7.28825 4.6056 8.7 3.90003C9.87812 3.30496 11.1801 2.99659 12.5 3.00003H13C15.0843 3.11502 17.053 3.99479 18.5291 5.47089C20.0052 6.94699 20.885 8.91568 21 11V11.5Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
+    <ConfigProvider
+      theme={{
+        algorithm: defaultAlgorithm,
+        token: {
+          colorPrimary: '#0062E6',
+        },
+      }}
+    >
+      <Container>
+        {isOpen && <ChatbotInterface 
+          onClose={toggleChatbot} 
+          initialData={initialData}
+        />}
+        
+        {/* Notification popup */}
+        {showNotification && !isOpen && (
+          <NotificationWrapper>
+            <StyledAlert
+              message="Need loan help? Ask our chatbot!"
+              type="info"
+              showIcon
+              closable
+              onClose={dismissNotification}
+            />
+          </NotificationWrapper>
         )}
-      </button>
-    </div>
+        
+        <StyledFloatButton
+          icon={isOpen ? <CloseOutlined /> : <CommentOutlined />}
+          type="primary"
+          onClick={toggleChatbot}
+          disabled={!isLoaded}
+          $isOpen={isOpen}
+          $isLoaded={isLoaded}
+          $wasLoaded={wasLoaded}
+        />
+      </Container>
+    </ConfigProvider>
   );
 };
 
