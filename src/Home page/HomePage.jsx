@@ -478,7 +478,7 @@ const HomePage = () => {
           <Row gutter={[24, 24]}>
             <Col xs={24}>
               <Title level={2}>Dashboard</Title>
-              <Paragraph>Welcome back, John. Here's an overview of your finances.</Paragraph>
+              <Paragraph>Welcome back, User. Here's an overview of your finances.</Paragraph>
             </Col>
           </Row>
           
@@ -577,7 +577,7 @@ const HomePage = () => {
                 ) : (
                   <div>
                     <div style={{ marginBottom: 24 }}>
-                      <Text>Personal Loan - $50,000</Text>
+                      <Text>Personal Loan - 50,000</Text>
                       <div style={{ height: 20, background: '#f0f0f0', borderRadius: 10, marginTop: 8, overflow: 'hidden' }}>
                         <div 
                           style={{ 
@@ -590,7 +590,7 @@ const HomePage = () => {
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
                         <Text type="secondary">24% Complete</Text>
-                        <Text type="secondary">$38,750.82 Remaining</Text>
+                        <Text type="secondary">38,750.82 Remaining</Text>
                       </div>
                     </div>
                     

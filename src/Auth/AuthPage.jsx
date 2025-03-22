@@ -7,7 +7,25 @@ import exampleLogo from '../assets/Loans24Logo.png';
 import partner1 from '../assets/Aditya-Birla-Finance-Ltd.png';
 import partner2 from '../assets/Poonawaala.png';
 import partner3 from '../assets/Tata_Capital_Logo.png';
+const isValidEmail = (email) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
 
+const isValidPhone = (phone) => {
+  const phoneRegex = /^[6-9]\d{9}$/; // Must be 10 digits and start with 6-9
+  return phoneRegex.test(phone);
+};
+
+const isValidName = (name) => {
+  const nameRegex = /^[A-Za-z\s]{3,30}$/; // Only alphabets, min 3, max 30
+  return nameRegex.test(name);
+};
+
+const isValidPassword = (password) => {
+  const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*]).{6,}$/;
+  return passwordRegex.test(password);
+};
 const AuthPage = () => {
   // Feature carousel data
   const features = [
@@ -24,7 +42,7 @@ const AuthPage = () => {
       description: "Compare loan details, EMIs, and interest rates all in one place."
     }
   ];
-
+  const [errors, setErrors] = useState({});
   const [currentFeature, setCurrentFeature] = useState(0);
   const [isLogin, setIsLogin] = useState(true);
   const location = useLocation();
@@ -51,6 +69,23 @@ const AuthPage = () => {
     }, 3000);
     return () => clearInterval(interval);
   }, [features.length]);
+   const validateForm = () => {
+      let newErrors = {};
+      if (!isValidEmail(formData.email)) {
+        newErrors.email = "Invalid email format.";
+      }
+      if (!isLogin && !isValidName(formData.name)) {
+        newErrors.name = "Name must contain only letters (3-30 characters).";
+      }
+      if (!isLogin && !isValidPhone(formData.phone)) {
+        newErrors.phone = "Phone number must be 10 digits and start with 6-9.";
+      }
+      if (!isValidPassword(formData.password)) {
+        newErrors.password = "Password must be at least 6 chars, 1 uppercase, 1 special char.";
+      }
+      setErrors(newErrors);
+      return Object.keys(newErrors).length === 0;
+    };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -58,18 +93,23 @@ const AuthPage = () => {
       ...prev,
       [name]: value
     }));
+    setErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
   const [message, setMessage] = useState(null);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
+
     e.preventDefault();
+        if (!validateForm()) {
+          return;
+        }
     setIsLoading(true); // Start buffer animation
-    const endpoint = isLogin 
+    const endpoint = isLogin
       ? 'http://localhost:8080/api/login'
       : 'http://localhost:8080/api/signup';
-  
+
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -77,10 +117,10 @@ const AuthPage = () => {
         credentials: 'include',
         body: JSON.stringify(formData)
       });
-  
+
       // Parse the response JSON
       const data = await response.json();
-  
+
       if (!response.ok) {
         // If error, show the error message from the backend
         setMessage({ type: 'error', text: data.message || 'Authentication failed.' });
@@ -90,10 +130,10 @@ const AuthPage = () => {
       }
 
       // localStorage.setItem('token', data.token);
-  
+
       // On success, show a success message from the backend
       // setMessage({ type: 'success', text: data.message || (isLogin ? 'Login successful!' : 'Signup successful!') });
-      
+
       if (isLogin) {
         setMessage({ type: 'success', text: data.message || 'Login successful!' });
         setIsLoading(false);
@@ -117,7 +157,7 @@ const AuthPage = () => {
       setTimeout(() => setMessage(null), 3000);
     }
   };
-  
+
 
   return (
     <div className="page-container">
@@ -149,7 +189,7 @@ const AuthPage = () => {
           <div className="feature-card">
             <h2>{features[currentFeature].title}</h2>
             <p>{features[currentFeature].description}</p>
-          </div>    
+          </div>
         </div>
 
         {/* IntelliMatch & Partners Section */}
@@ -187,8 +227,8 @@ const AuthPage = () => {
 
           {/* Auth Form */}
           <form onSubmit={handleSubmit} className="auth-form">
-            <div className="input-wrapper">
-              <Mail className="icon" size={20} />
+            <div className="input-wrapper flex items-center gap-2">
+              <Mail className="icon flex-shrink-0" size={20}  />
               <input
                 type="email"
                 name="email"
@@ -198,12 +238,14 @@ const AuthPage = () => {
                 required
                 className="input-field"
               />
+              {errors.email && <p className="error-message">{errors.email}</p>}
+
             </div>
 
             {!isLogin && (
               <>
-                <div className="input-wrapper">
-                  <User className="icon" size={20} />
+                <div className="input-wrapper flex items-center gap-2">
+                  <User className="icon flex-shrink-0" size={20} />
                   <input
                     type="text"
                     name="name"
@@ -213,9 +255,11 @@ const AuthPage = () => {
                     required
                     className="input-field"
                   />
+                  {errors.name && <p className="error-message">{errors.name}</p>}
+
                 </div>
-                <div className="input-wrapper">
-                  <Phone className="icon" size={20} />
+                <div className="input-wrapper flex items-center gap-2">
+                  <Phone className="icon flex-shrink-0" size={20}  />
                   <input
                     type="tel"
                     name="phone"
@@ -225,12 +269,14 @@ const AuthPage = () => {
                     required
                     className="input-field"
                   />
+                  {errors.phone && <p className="error-message">{errors.phone}</p>}
+
                 </div>
               </>
             )}
 
-            <div className="input-wrapper">
-              <Lock className="icon" size={20} />
+            <div className="input-wrapper flex items-center gap-2">
+              <Lock  className="icon flex-shrink-0" size={20} />
               <input
                 type="password"
                 name="password"
@@ -240,6 +286,8 @@ const AuthPage = () => {
                 required
                 className="input-field"
               />
+              {errors.password && <p className="error-message">{errors.password}</p>}
+
             </div>
 
             <button type="submit" className="submit-button">
