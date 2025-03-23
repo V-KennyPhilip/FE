@@ -265,9 +265,9 @@ const HomePage = () => {
   
   // Simulated data for mock Dashboard
   const [accountSummary, setAccountSummary] = useState({
-    totalBalance: 45750.82,
+    totalBalance: 457500.82,
     pendingPayments: 1250.00,
-    availableCredit: 25000.00,
+    availableCredit: 250000.00,
     nextPayment: '2025-04-15',
     interestRate: 8.25,
     paymentsMade: 12,
@@ -489,7 +489,7 @@ const HomePage = () => {
                   title={<StatisticLabel>Total Loan Balance</StatisticLabel>}
                   value={accountSummary.totalBalance}
                   precision={2}
-                  prefix="$"
+                  prefix="₹"
                   valueStyle={{ color: '#0062E6' }}
                 />
                 <Divider />
@@ -503,7 +503,7 @@ const HomePage = () => {
                   title={<StatisticLabel>Pending Payment</StatisticLabel>}
                   value={accountSummary.pendingPayments}
                   precision={2}
-                  prefix="$"
+                  prefix="₹"
                   valueStyle={{ color: '#fa8c16' }}
                 />
                 <Button type="primary" size="small" style={{ marginTop: 16 }}>
@@ -518,7 +518,7 @@ const HomePage = () => {
                   title={<StatisticLabel>Available Credit</StatisticLabel>}
                   value={accountSummary.availableCredit}
                   precision={2}
-                  prefix="$"
+                  prefix="₹"
                   valueStyle={{ color: '#52c41a' }}
                 />
                 <Button type="default" size="small" style={{ marginTop: 16 }}>

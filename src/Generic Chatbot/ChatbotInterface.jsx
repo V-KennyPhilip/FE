@@ -392,7 +392,12 @@ const ChatbotInterface = ({ onClose, initialData }) => {
                 <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                   <OptionButton 
                     icon={<RollbackOutlined />} 
-                    onClick={handleBack}
+                    onClick={menuHistory.length > 0 ? handleBack : undefined}
+                    style=
+                    {{ 
+                      cursor: menuHistory.length > 0 ? 'pointer' : 'not-allowed',
+                      opacity: menuHistory.length > 0 ? 1 : 0.5
+                    }}
                   >
                     Back
                   </OptionButton>

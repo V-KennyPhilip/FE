@@ -54,11 +54,12 @@ const StyledFloatButton = styled(FloatButton)`
     width: 100% !important;
     height: 100% !important;
   }
+  bottom: 22px;
 `;
 
 const NotificationWrapper = styled.div`
   position: fixed;
-  bottom: 90px;
+  bottom: 65px;
   right: 20px;
   max-width: 250px;
   z-index: 999;
