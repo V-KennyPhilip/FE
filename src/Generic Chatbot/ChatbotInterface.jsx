@@ -4,6 +4,7 @@ import { RollbackOutlined, HomeOutlined, CloseOutlined } from '@ant-design/icons
 import { v4 as uuidv4 } from 'uuid';
 import styled from '@emotion/styled';
 import { keyframes } from '@emotion/react';
+import { useAmplitude } from '../Context/AmplitudeContext';
 
 const { Title, Text } = Typography;
 const { defaultAlgorithm } = antTheme;
@@ -140,12 +141,12 @@ const OptionsContainer = styled.div`
   align-self: flex-start;
 `;
 
+// Fixed OptionButton with stable hover effect (no flickering)
 const OptionButton = styled(Button)`
   border-radius: 18px !important;
   background: linear-gradient(135deg, #ffffff, #f0f7ff) !important;
   color: #0062E6 !important;
   border: 1px solid #d1e6ff !important;
-  transition: all 0.2s ease !important;
   font-size: 14px !important;
   font-weight: 500 !important;
   text-align: left !important;
@@ -153,50 +154,105 @@ const OptionButton = styled(Button)`
   padding: 8px 14px !important;
   flex-direction: column;
   width: 100%;
+  /* Remove transform and only use box-shadow for hover effect */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+  transition: box-shadow 0.3s ease, background 0.3s ease, border-color 0.3s ease, color 0.3s ease !important;
 
   &:hover {
     background: linear-gradient(135deg, #f0f7ff, #e1eeff) !important;
-    transform: translateY(-2px) !important;
-    box-shadow: 0 3px 10px rgba(0, 98, 230, 0.1) !important;
+    box-shadow: 0 3px 10px rgba(0, 98, 230, 0.15) !important;
+    border-color: #a6c8ff !important;
   }
 
   &:active {
-    transform: translateY(0) !important;
+    box-shadow: 0 1px 5px rgba(0, 98, 230, 0.1) !important;
   }
 `;
 
 const ChatbotInterface = ({ onClose, initialData }) => {
+  // Get tracking function
+  const { trackEvent } = useAmplitude();
+  
   const [messages, setMessages] = useState([]);
   const [options, setOptions] = useState([]);
   const [mainOptions, setMainOptions] = useState([]);
   const [menuHistory, setMenuHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [typingMessage, setTypingMessage] = useState(null);
+  const [isInitialized, setIsInitialized] = useState(false);
   const messagesEndRef = useRef(null);
   const staticMessageId = useRef(uuidv4());
+  const conversationId = useRef(uuidv4());
+  const conversationStartTime = useRef(Date.now());
+  const interactionCount = useRef(0);
+  const interactionPath = useRef([]);
+  const isTracked = useRef(false);
 
   const staticMessage = "Hello! I'm your Loans24 assistant. How can I help you today?";
 
+  // Track chatbot interactions
+  const trackChatbotInteraction = (action, details = {}) => {
+    // Only track after initialization
+    if (!isInitialized) return;
+    
+    trackEvent('Chatbot Interaction', {
+      action,
+      conversation_id: conversationId.current,
+      interaction_count: interactionCount.current,
+      interaction_path: interactionPath.current.join(' → '),
+      conversation_duration_seconds: Math.floor((Date.now() - conversationStartTime.current) / 1000),
+      ...details,
+      timestamp: new Date().toISOString()
+    });
+  };
+
+  // Handle initial data loading
   useEffect(() => {
-    // Initialize with the welcome message
+    // Initialize local data
     setMessages([{ 
       id: staticMessageId.current, 
       text: staticMessage, 
       isBot: true 
     }]);
 
-    // If we have preloaded initialData
-    if (initialData) {
-      // Check if initialPrompts are available in the initialData
-      if (initialData.initialPrompts && initialData.initialPrompts.length > 0) {
-        setOptions(initialData.initialPrompts);
-        setMainOptions(initialData.initialPrompts);
-      }
+    // If initial data is available
+    if (initialData && initialData.initialPrompts && initialData.initialPrompts.length > 0) {
+      setOptions(initialData.initialPrompts);
+      setMainOptions(initialData.initialPrompts);
+      setIsInitialized(true);
     } else {
       // Fallback to API call if initialData not provided
       fetchInitialOptions();
     }
   }, [initialData]);
+
+  // Track open/close only after initialization
+  useEffect(() => {
+    if (isInitialized && !isTracked.current) {
+      // Track chatbot open after initialization is complete
+      trackChatbotInteraction('open');
+      isTracked.current = true;
+      
+      // Track options loaded
+      if (options.length > 0) {
+        trackChatbotInteraction('options_loaded', {
+          option_count: options.length,
+          from_initial_data: initialData && initialData.initialPrompts ? true : false
+        });
+      }
+      
+      // Cleanup function to track chatbot close
+      return () => {
+        const sessionDuration = Math.floor((Date.now() - conversationStartTime.current) / 1000);
+        
+        trackChatbotInteraction('close', {
+          total_interactions: interactionCount.current,
+          session_duration_seconds: sessionDuration,
+          interaction_path_full: interactionPath.current.join(' → ')
+        });
+      };
+    }
+  }, [isInitialized, options]);
 
   useEffect(() => {
     scrollToBottom();
@@ -209,19 +265,30 @@ const ChatbotInterface = ({ onClose, initialData }) => {
   const fetchInitialOptions = async () => {
     try {
       setIsLoading(true);
+      
       const response = await fetch('http://localhost:8080/api/chatbot/interaction', {
-        credentials: 'include'
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json'
+        }
       });
+      
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
+      
       const data = await response.json();
+      
       if (data.success && data.data.initialPrompts) {
         setOptions(data.data.initialPrompts);
         setMainOptions(data.data.initialPrompts);
+        setIsInitialized(true);
+      } else {
+        throw new Error('No initial prompts found in API response');
       }
     } catch (error) {
       console.error('Error fetching initial options:', error);
+      
       setMessages(prev => [
         ...prev,
         {
@@ -230,37 +297,75 @@ const ChatbotInterface = ({ onClose, initialData }) => {
           isBot: true
         }
       ]);
+      
+      // Track error only if initialized
+      if (isInitialized) {
+        trackChatbotInteraction('error', {
+          error_type: 'initial_options_error',
+          error_message: error.message
+        });
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleOptionClick = async (promptId, promptText) => {
+    interactionCount.current += 1;
+    interactionPath.current.push(promptText);
+    
+    // Track option selection
+    trackChatbotInteraction('option_selected', {
+      prompt_id: promptId,
+      prompt_text: promptText,
+      current_path: interactionPath.current.join(' → ')
+    });
+    
     // Add the user's message
     const userMessageId = uuidv4();
     setMessages(prev => [
       ...prev,
       { id: userMessageId, text: promptText, isBot: false }
     ]);
+    
     setIsLoading(true);
     setOptions([]); // Clear options while loading new data
 
     try {
+      // Make the API call with credentials
       const response = await fetch(`http://localhost:8080/api/chatbot/interaction?prompt_id=${promptId}`, {
-        credentials: 'include'
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json'
+        }
       });
+      
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
+      
       const data = await response.json();
+      
       if (data.success && data.data.response) {
         const botMessageId = uuidv4();
+        
         // Start with an empty text for typing effect
         setMessages(prev => [
           ...prev,
           { id: botMessageId, text: '', isBot: true }
         ]);
+        
+        // Simulate typing effect for better UX
         simulateTyping(data.data.response.text, botMessageId);
+        
+        // Track the bot's response
+        trackChatbotInteraction('bot_response_received', {
+          prompt_id: promptId,
+          response_length: data.data.response.text.length,
+          has_next_prompts: data.data.nextPrompts?.length > 0,
+          next_prompts_count: data.data.nextPrompts?.length || 0
+        });
+        
         // If new prompts are provided, save current options to history and update
         if (data.data.nextPrompts && data.data.nextPrompts.length > 0) {
           setMenuHistory(prev => [...prev, options]);
@@ -269,9 +374,20 @@ const ChatbotInterface = ({ onClose, initialData }) => {
           // Even if no new prompts, display the back buttons
           setOptions([]);
         }
+      } else {
+        throw new Error('Invalid response format from API');
       }
     } catch (error) {
       console.error('Error fetching response:', error);
+      
+      // Track error
+      trackChatbotInteraction('error', {
+        error_type: 'option_selection_error',
+        prompt_id: promptId,
+        prompt_text: promptText,
+        error_message: error.message
+      });
+      
       setMessages(prev => [
         ...prev,
         {
@@ -280,7 +396,9 @@ const ChatbotInterface = ({ onClose, initialData }) => {
           isBot: true
         }
       ]);
-      setOptions([]);
+      
+      // Reset options to main menu on error
+      setOptions(mainOptions);
     } finally {
       setIsLoading(false);
     }
@@ -290,6 +408,8 @@ const ChatbotInterface = ({ onClose, initialData }) => {
   const simulateTyping = (fullText, messageId) => {
     setTypingMessage(messageId);
     let currentIndex = 0;
+    const typingSpeed = 1; // Milliseconds per character
+    
     const interval = setInterval(() => {
       currentIndex++;
       setMessages(prev =>
@@ -301,11 +421,22 @@ const ChatbotInterface = ({ onClose, initialData }) => {
         clearInterval(interval);
         setTypingMessage(null);
       }
-    }, 1); // Adjust the speed (ms per character) as needed
+    }, typingSpeed);
   };
 
   // Go back one menu level
   const handleBack = () => {
+    if (menuHistory.length === 0) return;
+    
+    interactionCount.current += 1;
+    interactionPath.current.push('← Back');
+    
+    // Track back navigation
+    trackChatbotInteraction('back_navigation', {
+      from_level: menuHistory.length,
+      to_level: menuHistory.length - 1
+    });
+    
     setMenuHistory(prevHistory => {
       if (prevHistory.length > 0) {
         const newHistory = [...prevHistory];
@@ -319,9 +450,35 @@ const ChatbotInterface = ({ onClose, initialData }) => {
 
   // Return to the main (initial) menu
   const handleBackToMain = () => {
+    interactionCount.current += 1;
+    interactionPath.current.push('Home (Main Menu)');
+    
+    // Track main menu navigation
+    trackChatbotInteraction('main_menu_navigation', {
+      from_level: menuHistory.length
+    });
+    
     setMenuHistory([]);
     setOptions(mainOptions);
   };
+
+  // Handle closing the chatbot
+  const handleClose = () => {
+    trackChatbotInteraction('close_button_clicked', {
+      total_interactions: interactionCount.current,
+      session_duration_seconds: Math.floor((Date.now() - conversationStartTime.current) / 1000),
+      interaction_path_full: interactionPath.current.join(' → ')
+    });
+    
+    if (onClose) {
+      onClose();
+    }
+  };
+
+  // If not initialized yet, don't render anything
+  if (!isInitialized && initialData === null) {
+    return null;
+  }
 
   return (
     <ConfigProvider
@@ -338,7 +495,7 @@ const ChatbotInterface = ({ onClose, initialData }) => {
           <Button 
             type="text" 
             icon={<CloseOutlined />} 
-            onClick={onClose} 
+            onClick={handleClose} 
             style={{ color: '#fff' }}
           />
         </Header>
@@ -393,11 +550,11 @@ const ChatbotInterface = ({ onClose, initialData }) => {
                   <OptionButton 
                     icon={<RollbackOutlined />} 
                     onClick={menuHistory.length > 0 ? handleBack : undefined}
-                    style=
-                    {{ 
+                    style={{ 
                       cursor: menuHistory.length > 0 ? 'pointer' : 'not-allowed',
                       opacity: menuHistory.length > 0 ? 1 : 0.5
                     }}
+                    disabled={menuHistory.length === 0}
                   >
                     Back
                   </OptionButton>

@@ -1,4 +1,6 @@
+// LandingPage.jsx
 import React, { useEffect, useState, useMemo } from 'react';
+import { checkAbandonedAuth, clearAbandonedAuth } from '../utils/authTracking';
 import { 
   Layout, 
   Menu, 
@@ -12,7 +14,8 @@ import {
   Dropdown, 
   Space, 
   Divider, 
-  ConfigProvider 
+  ConfigProvider,
+  notification
 } from 'antd';
 import { 
   HomeOutlined, 
@@ -25,10 +28,12 @@ import {
   DownOutlined,
   CheckCircleOutlined
 } from '@ant-design/icons';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { keyframes } from '@emotion/react';
 import styled from '@emotion/styled';
 import ChatbotButton from '../Generic Chatbot/ChatbotButton';
+import { useAmplitude } from '../Context/AmplitudeContext';
+
 
 // Images
 import l24logo from '../assets/Loans24Logo.png';
@@ -40,6 +45,7 @@ import prof from '../assets/prof.png';
 // Destructure components
 const { Header, Content, Footer } = Layout;
 const { Title, Text, Paragraph } = Typography;
+
 
 // Define animations
 const floatAnimation = keyframes`
@@ -240,6 +246,54 @@ const LandingPage = () => {
     customers: 0,
     satisfaction: 0
   });
+
+  const navigate = useNavigate();
+  const { trackEvent } = useAmplitude();
+
+  // Check for abandoned auth on component mount
+  useEffect(() => {
+    const abandonedAuth = checkAbandonedAuth();
+    
+    if (abandonedAuth) {
+      // Track that we found an abandoned auth
+      trackEvent('Abandoned Auth Detected', {
+        auth_mode: abandonedAuth.auth_mode,
+        hours_since_abandoned: (new Date() - new Date(abandonedAuth.timestamp)) / (1000 * 60 * 60)
+      });
+      
+      // Show a notification with a button to go back to auth
+      notification.open({
+        message: 'Complete Your Registration',
+        description: (
+          <div>
+            <p>You started {abandonedAuth.auth_mode === 'login' ? 'signing in' : 'creating an account'} but didn't finish. Complete the process to access your financial portfolio insights!</p>
+            <Button 
+              type="primary" 
+              onClick={() => {
+                // Track the click on the notification
+                trackEvent('Abandoned Auth Notification Clicked', {
+                  auth_mode: abandonedAuth.auth_mode
+                });
+                
+                // Navigate to auth page
+                navigate('/auth');
+              }}
+              style={{ marginTop: '8px' }}
+            >
+              Continue {abandonedAuth.auth_mode === 'login' ? 'Login' : 'Signup'}
+            </Button>
+          </div>
+        ),
+        duration: 0, // Don't auto-close
+        placement: 'topRight',
+        onClose: () => {
+          // Track dismissal and clear the stored auth data
+          trackEvent('Abandoned Auth Notification Dismissed');
+          clearAbandonedAuth();
+        }
+      });
+    }
+  }, []);
   
   // Mock loan statistics with animation
   useEffect(() => {
@@ -330,40 +384,42 @@ const LandingPage = () => {
     }
   ];
 
-  // Navigation menu items
-  const menuItems = useMemo(() => [
-    {
-      key: 'home',
-      icon: <HomeOutlined />,
-      label: 'Home'
-    },
-    {
-      key: 'products',
-      icon: <AppstoreOutlined />,
-      label: 'Products',
-      children: [
-        { key: 'personal', label: 'Personal Loans' },
-        { key: 'home', label: 'Home Loans' },
-        { key: 'business', label: 'Business Loans' },
-        { key: 'education', label: 'Education Loans' }
-      ]
-    },
-    {
-      key: 'resources',
-      icon: <BulbOutlined />,
-      label: 'Resources',
-      children: [
-        { key: 'calculator', label: 'Loan Calculator' },
-        { key: 'guides', label: 'Guides' },
-        { key: 'faq', label: 'FAQ' }
-      ]
-    },
-    {
-      key: 'contact',
-      icon: <PhoneOutlined />,
-      label: 'Contact Us'
-    }
-  ], []);
+// This represents the part of your LandingPage where the menu items are defined
+// You can integrate this fix into your LandingPage.jsx file
+
+const menuItems = useMemo(() => [
+  {
+    key: 'home',
+    icon: <HomeOutlined />,
+    label: 'Home'
+  },
+  {
+    key: 'products',
+    icon: <AppstoreOutlined />,
+    label: 'Products',
+    children: [
+      { key: 'personal_loan', label: 'Personal Loans' },  // Changed from 'home'
+      { key: 'home_loan', label: 'Home Loans' },         // Changed from 'home'
+      { key: 'business', label: 'Business Loans' },
+      { key: 'education', label: 'Education Loans' }
+    ]
+  },
+  {
+    key: 'resources',
+    icon: <BulbOutlined />,
+    label: 'Resources',
+    children: [
+      { key: 'calculator', label: 'Loan Calculator' },
+      { key: 'guides', label: 'Guides' },
+      { key: 'faq', label: 'FAQ' }
+    ]
+  },
+  {
+    key: 'contact',
+    icon: <PhoneOutlined />,
+    label: 'Contact Us'
+  }
+], []);
 
   const footerLinks = {
     about: ['Our Story', 'Leadership Team', 'Careers', 'Press Releases'],
