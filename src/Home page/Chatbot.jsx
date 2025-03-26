@@ -891,90 +891,93 @@ const Chatbot = () => {
   };
 
   // Fetch response from backend with prompt ID
-  const fetchResponse = async (promptId, requestData = null, requestType = 'GET', additional = null) => {
-    try {
-      setLoading(true);
-      
-      const additionalParam = additional || selectedBankId || selectedLoanId;
-      let url = `${API_URL}/api/userbot/query?promptId=${promptId}`;
-      if (additionalParam) {
-        url += `&additional=${additionalParam}`;
-      }
-      
-      // Configure request options
-      const config = {
-        withCredentials: true,
-        headers: { 'Content-Type': 'application/json' }
-      };
-
-      // Make the appropriate request based on request type
-      let response;
-      if (requestType === 'GET') {
-        response = await axios.get(url, config);
-      } else if (requestType === 'PUT') {
-        response = await axios.put(url, requestData, config);
-      } else if (requestType === 'POST') {
-        response = await axios.post(url, requestData, config);
-      }
-
-      // Process successful response
-      if (response.data.success) {
-        const { data } = response.data;
-        let botMessage;
-        
-        if (data.extraAction && (data.extraAction.overdue !== undefined || 
-            data.extraAction.lastPaid !== undefined || 
-            data.extraAction.pending !== undefined)) {
-          
-          // Create a formatted message for EMI schedule
-          botMessage = {
-            type: 'bot',
-            text: data.responseText || "Here's your EMI schedule:",
-            emiSchedule: data.extraAction,
-            followups: data.followups || []
-          };
-        } else {
-          // Regular message
-          botMessage = {
-            type: 'bot',
-            text: data.responseText,
-            followups: data.followups || [],
-            extraAction: data.extraAction || null
-          };
-        }
-        
-        // Save history for back navigation if followups exist
-        // Only add to history if this is not a main menu (promptId = 0) request
-        if (promptId !== 0 && currentPromptId !== promptId) {
-          setHistory(prev => [...prev, currentPromptId]);
-        }
-
-        // Only add to history if the response has follow-ups
-        if (data.followups && data.followups.length > 0) {
-          setHistory(prev => [...prev, currentPromptId]);
-        }
-        
-        setMessages(prev => [...prev, botMessage]);
-        setCurrentPromptId(promptId);
-        return response.data;
-      } else {
-        throw new Error(response.data.message || "Server returned an unsuccessful response");
-      }
-    } catch (error) {
-      console.error('Error fetching response:', error);
-      setMessages(prev => [
-        ...prev,
-        { 
-          type: 'bot', 
-          text: `Error: ${error.response?.data?.message || error.message || 'Something went wrong'}`,
-          followups: [] 
-        }
-      ]);
-      throw error;
-    } finally {
-      setLoading(false);
+  // Fetch response from backend with prompt ID
+const fetchResponse = async (promptId, requestData = null, requestType = 'GET', additional = null) => {
+  try {
+    setLoading(true);
+    
+    const additionalParam = additional || selectedBankId || selectedLoanId;
+    let url = `${API_URL}/api/userbot/query?promptId=${promptId}`;
+    if (additionalParam) {
+      url += `&additional=${additionalParam}`;
     }
-  };
+    
+    // Configure request options
+    const config = {
+      withCredentials: true,
+      headers: { 'Content-Type': 'application/json' }
+    };
+
+    // Make the appropriate request based on request type
+    let response;
+    if (requestType === 'GET') {
+      response = await axios.get(url, config);
+    } else if (requestType === 'PUT') {
+      response = await axios.put(url, requestData, config);
+    } else if (requestType === 'POST') {
+      response = await axios.post(url, requestData, config);
+    }
+
+    // Process successful response
+    if (response.data.success) {
+      const { data } = response.data;
+      let botMessage;
+      
+      if (data.extraAction && (data.extraAction.overdue !== undefined || 
+          data.extraAction.lastPaid !== undefined || 
+          data.extraAction.pending !== undefined)) {
+        
+        // Create a formatted message for EMI schedule
+        // Pass the extraAction directly as the emiSchedule
+        botMessage = {
+          type: 'bot',
+          text: data.responseText || "Here's your EMI schedule:",
+          emiSchedule: data.extraAction, // Contains overdue, lastPaid, pending, and pdfPath
+          extraAction: data.extraAction, // Include extraAction to ensure pdfPath is accessible
+          followups: data.followups || []
+        };
+      } else {
+        // Regular message
+        botMessage = {
+          type: 'bot',
+          text: data.responseText,
+          followups: data.followups || [],
+          extraAction: data.extraAction || null
+        };
+      }
+      
+      // Save history for back navigation if followups exist
+      // Only add to history if this is not a main menu (promptId = 0) request
+      if (promptId !== 0 && currentPromptId !== promptId) {
+        setHistory(prev => [...prev, currentPromptId]);
+      }
+
+      // Only add to history if the response has follow-ups
+      if (data.followups && data.followups.length > 0) {
+        setHistory(prev => [...prev, currentPromptId]);
+      }
+      
+      setMessages(prev => [...prev, botMessage]);
+      setCurrentPromptId(promptId);
+      return response.data;
+    } else {
+      throw new Error(response.data.message || "Server returned an unsuccessful response");
+    }
+  } catch (error) {
+    console.error('Error fetching response:', error);
+    setMessages(prev => [
+      ...prev,
+      { 
+        type: 'bot', 
+        text: `Error: ${error.response?.data?.message || error.message || 'Something went wrong'}`,
+        followups: [] 
+      }
+    ]);
+    throw error;
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Handle button click for predefined options
   const handleFollowupClick = async (followup) => {
@@ -1384,12 +1387,62 @@ const renderLoanBoxes = (loans, displayOnly = false) => {
     );
   };
 
-  const renderEmiSchedule = (emiSchedule) => {
+  const renderEmiSchedule = (emiSchedule, extraAction) => {
     if (!emiSchedule) return null;
+    const API_URL = "http://localhost:8080";
+    
+    // Get PDF path - try from both emiSchedule and extraAction
+    const pdfPath = emiSchedule.pdfPath || (extraAction && extraAction.pdfPath);
+    
+    // Function to handle PDF download
+    const handlePdfDownload = async (e) => {
+      e.preventDefault();
+      
+      try {
+        // Determine base URL - remove any trailing slashes
+        const baseUrl = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+        
+        // Get filename from path
+        const filename = pdfPath.split('/').pop();
+        
+        // Use axios to fetch the PDF as a blob
+        const response = await axios.get(`${baseUrl}${pdfPath}`, {
+          responseType: 'blob',
+          withCredentials: true,
+          headers: {
+            'Accept': 'application/pdf'
+          }
+        });
+        
+        // Verify that we received a PDF
+        const contentType = response.headers['content-type'];
+        if (contentType && contentType.indexOf('application/pdf') === -1) {
+          throw new Error('Received non-PDF content');
+        }
+        
+        // Create a blob URL for the PDF data
+        const blob = new Blob([response.data], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        
+        // Create a temporary link element to trigger the download
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        
+        // Clean up
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+      } catch (error) {
+        console.error('Error downloading PDF:', error);
+        alert('Failed to download PDF. Please try again later.');
+      }
+    };
     
     return (
       <div className="emi-schedule-container">
-        {/* Overdue EMIs section */}
+        {/* Rest of EMI schedule display */}
         <div className="emi-category">
           <h4>Overdue EMIs</h4>
           {emiSchedule.overdue && emiSchedule.overdue.length > 0 ? (
@@ -1428,7 +1481,7 @@ const renderLoanBoxes = (loans, displayOnly = false) => {
             <div className="emi-empty-state">No Overdue EMIs</div>
           )}
         </div>
-
+  
         {/* Last Paid EMIs section */}
         <div className="emi-category">
           <h4>Last Paid EMIs</h4>
@@ -1462,7 +1515,7 @@ const renderLoanBoxes = (loans, displayOnly = false) => {
             <div className="emi-empty-state">No Last Paid EMIs</div>
           )}
         </div>
-
+  
         {/* Pending EMIs section */}
         <div className="emi-category">
           <h4>Pending EMIs</h4>
@@ -1502,6 +1555,18 @@ const renderLoanBoxes = (loans, displayOnly = false) => {
             <div className="emi-empty-state">No Pending EMIs</div>
           )}
         </div>
+  
+        {/* PDF Download Button */}
+        {pdfPath && (
+          <div className="pdf-download-container">
+            <button 
+              onClick={handlePdfDownload}
+              className="pdf-download-button"
+            >
+              <span className="pdf-icon">📄</span> Download EMI Schedule
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -1558,8 +1623,8 @@ const renderLoanBoxes = (loans, displayOnly = false) => {
                 <div className="message-content">
                   <div className="message-text">{message.text}</div>
                   
-                  {/* EMI Schedule Display */}
-                  {message.emiSchedule && renderEmiSchedule(message.emiSchedule)}
+                  {/* EMI Schedule Display - Pass extraAction to renderEmiSchedule */}
+                  {message.emiSchedule && renderEmiSchedule(message.emiSchedule, message.extraAction)}
                   
                   {/* Bank selection buttons */}
                   {message.extraAction && message.extraAction.bankDetails ? (

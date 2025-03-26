@@ -1,3 +1,4 @@
+// HomePage.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -93,6 +94,7 @@ const NavMenu = styled.div`
   align-items: center;
   flex: 1;
   margin-left: 40px;
+  color: white;
   
   @media (max-width: 768px) {
     display: none;
