@@ -4,6 +4,7 @@
  * Check if there's an abandoned authentication form
  * @returns {Object|null} Form data or null if no abandoned form
  */
+// src/utils/authTracking.jsx
 export const checkAbandonedAuth = () => {
     try {
       const storedData = localStorage.getItem('auth_form_started');
@@ -13,16 +14,19 @@ export const checkAbandonedAuth = () => {
       const timestamp = new Date(parsedData.timestamp);
       const now = new Date();
       
-      // Only consider forms abandoned within the last 24 hours
-      const hoursDiff = (now - timestamp) / (1000 * 60 * 60);
+      // Calculate minutes difference
+      const minutesDiff = (now - timestamp) / (1000 * 60);
       
-      if (hoursDiff <= 24) {
-        return parsedData;
-      } else {
-        // Clear old data
+      // Only show notification if AT LEAST 1 minute has passed
+      if (minutesDiff >= 1) {
+        // But clear data after 24 hours to prevent perpetual storage
+        if (minutesDiff <= 1440) { // 24hrs = 1440 minutes
+          return parsedData;
+        }
         localStorage.removeItem('auth_form_started');
         return null;
       }
+      return null; // Not enough time passed yet
     } catch (error) {
       console.error('Error checking abandoned auth:', error);
       return null;
