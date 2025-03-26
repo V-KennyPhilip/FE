@@ -74,7 +74,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 15px;
-  background: linear-gradient(135deg, #2193b0, #6dd5ed);
+  background: linear-gradient(135deg, #0062E6, #33AEFF);
   color: white;
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
@@ -197,7 +197,7 @@
 
 .followup-button {
   padding: 8px 12px;
-  background: linear-gradient(135deg, #2193b0, #6dd5ed);
+  background: linear-gradient(135deg, #0062E6, #33AEFF);
   color: white;
   border: none;
   border-radius: 15px;
@@ -702,12 +702,12 @@
 }
 
 .feedback-modal-footer .submit-button {
-  background: linear-gradient(135deg, #2193b0, #6dd5ed);
+  background: linear-gradient(135deg, #0062E6, #33AEFF);
   color: white;
 }
 
 .feedback-modal-footer .submit-button:hover {
-  background: linear-gradient(135deg, #1c7d97, #5abdd2);
+  background: linear-gradient(135deg, #0062E6, #33AEFF);
 }
 
 .feedback-modal-footer .cancel-button {
@@ -717,4 +717,128 @@
 .feedback-modal-footer .submit-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+
+/* Action Popup Styles */
+.action-popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.action-popup {
+  background-color: white;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  animation: popup-appear 0.3s ease-out;
+}
+
+@keyframes popup-appear {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.action-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.action-popup-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #333;
+}
+
+.action-popup-body {
+  padding: 20px;
+  text-align: center;
+}
+
+.action-popup-body p {
+  margin-bottom: 20px;
+  color: #555;
+  line-height: 1.5;
+}
+
+.action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 15px;
+  padding: 10px 20px;
+  background-color: #4a90e2;
+  color: white;
+  text-decoration: none;
+  border-radius: 4px;
+  font-weight: bold;
+  transition: background-color 0.3s, transform 0.2s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.action-link:hover {
+  background-color: #357ABD;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.action-link:active {
+  transform: translateY(0);
+}
+
+.action-popup-footer {
+  padding: 15px;
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid #eee;
+}
+
+.cancel-button {
+  padding: 8px 16px;
+  background-color: #f1f1f1;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.3s;
+}
+
+.cancel-button:hover {
+  background-color: #e1e1e1;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #999;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.3s;
+}
+
+.close-button:hover {
+  color: #333;
 }

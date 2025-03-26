@@ -1,4 +1,3 @@
-// Chatbot.jsx
 // import React, { useState, useEffect, useRef, useContext } from 'react';
 // import { UserContext } from '../Context/UserContext';
 // import axios from 'axios';
@@ -84,7 +83,7 @@
 //       setLoading(true);
       
 //       const additionalParam = additional || selectedBankId || selectedLoanId;
-//       let url = `${API_URL}/api/userbot/query?prompt_id=${promptId}`;
+//       let url = `${API_URL}/api/userbot/query?prompt_id=${promptId}&userId=${userId}`;
 //       if (additionalParam) {
 //         url += `&additional=${additionalParam}`;
 //       }
@@ -808,22 +807,14 @@
 
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { UserContext } from '../Context/UserContext';
-import { useAmplitude } from '../Context/AmplitudeContext'; // Import the Amplitude hook
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import './Chatbot.css';
 import DynamicForm from './DynamicForm';
-import { FaRobot, FaPaperPlane, FaTimes, FaSearch, FaPlus, FaChartBar, FaFileExcel, FaBars, FaComment } from "react-icons/fa";
+import { FaRobot, FaPaperPlane, FaTimes, FaSearch, FaPlus, FaChartBar, FaFileExcel,FaExternalLinkAlt, FaBars, FaComment } from "react-icons/fa";
 const API_URL = process.env.BASE_API_URL;
-const LLAMA_API_URL = "http://localhost:8000/api/all";
 
 const Chatbot = () => {
-  // Get Amplitude tracking functions
-  const { 
-    trackChatbotInteraction, 
-    trackFormSubmission 
-  } = useAmplitude();
-
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -835,12 +826,8 @@ const Chatbot = () => {
   const [selectedBankId, setSelectedBankId] = useState(null);
   const [expandedEmiId, setExpandedEmiId] = useState(null);
   const [initialFetched, setInitialFetched] = useState(false);
-  const [userInput, setUserInput] = useState(''); // New state for user text input
-  const [chatStarted, setChatStarted] = useState(false); // Track if user has started using the chatbot
-  const [insightTimerId, setInsightTimerId] = useState(null); // Timer for periodic insights
-  const [suggestionTimerId, setSuggestionTimerId] = useState(null); // Timer for suggestions
+  const [userInput, setUserInput] = useState(''); // Add state for user input
   const messagesEndRef = useRef(null);
-  const inputRef = useRef(null); // Reference for the input field
   const { userDetails } = useContext(UserContext);
   const userId = userDetails?.id;
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
@@ -848,43 +835,26 @@ const Chatbot = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); 
   const [feedbackSubmitStatus, setFeedbackSubmitStatus] = useState(null);
 
+  // New state for the action popup
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [popupLink, setPopupLink] = useState('');
+  const [popupMessage, setPopupMessage] = useState('');
+  const [popupTitle, setPopupTitle] = useState('Action Required');  
+
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
-    // Track sidebar toggle
-    trackChatbotInteraction('toggle_sidebar', {
-      is_open: !isSidebarOpen,
-      conversation_id: conversationId
-    });
   };
 
   const fetchInitialResponse = async () => {
     try {
       setLoading(true);
       await fetchResponse(0);
-      
-      // Start tracking only after initial response is shown
-      setChatStarted(true);
-      
-      // Track initial conversation start
-      trackChatbotInteraction('conversation_started', {
-        conversation_id: conversationId
-      });
-      
-      // Set up timers for insights and suggestions after chatbot is started
-      setupPeriodicInsights();
-      setupSuggestions();
     } catch (error) {
       console.error("Error fetching initial response:", error);
       setMessages(prev => [
         ...prev,
         { type: 'bot', text: 'Error fetching initial response.', followups: [] }
       ]);
-      // Track error
-      trackChatbotInteraction('error', {
-        error_type: 'initial_response_error',
-        error_message: error.message,
-        conversation_id: conversationId
-      });
     } finally {
       setLoading(false);
     }
@@ -896,122 +866,8 @@ const Chatbot = () => {
       fetchInitialResponse();
       setInitialFetched(true);
     }
-    
-    // Focus the input field when chatbot is opened
-    if (isOpen && inputRef.current) {
-      inputRef.current.focus();
-    }
   }, [userDetails, isOpen, initialFetched]);
 
-  // Clean up timers when component unmounts or chat is closed
-  useEffect(() => {
-    return () => {
-      if (insightTimerId) clearTimeout(insightTimerId);
-      if (suggestionTimerId) clearTimeout(suggestionTimerId);
-    };
-  }, [insightTimerId, suggestionTimerId]);
-
-  // Set up periodic insights (e.g., every 3 minutes)
-  const setupPeriodicInsights = () => {
-    if (insightTimerId) clearTimeout(insightTimerId);
-    
-    const timer = setTimeout(() => {
-      if (isOpen && chatStarted) {
-        // Generate a random insight based on user profile
-        generateInsight();
-        // Recursively setup the next insight
-        setupPeriodicInsights();
-      }
-    }, 180000); // 3 minutes
-    
-    setInsightTimerId(timer);
-  };
-
-  // Set up suggestions based on user profile (once after 1 minute)
-  const setupSuggestions = () => {
-    if (suggestionTimerId) clearTimeout(suggestionTimerId);
-    
-    const timer = setTimeout(() => {
-      if (isOpen && chatStarted) {
-        // Generate suggestions based on user profile
-        generateSuggestion();
-      }
-    }, 60000); // 1 minute
-    
-    setSuggestionTimerId(timer);
-  };
-
-  // Generate an insight based on user data
-  const generateInsight = () => {
-    // Example insights - in a real app, these would be generated based on user data
-    const insights = [
-      "Based on your payment history, you're in the top 20% of on-time payers!",
-      "Your credit utilization has improved by 15% over the last 3 months.",
-      "You might save ₹5,000 annually by consolidating your loans.",
-      "Your current EMI payments account for 32% of your monthly income."
-    ];
-    
-    const randomInsight = insights[Math.floor(Math.random() * insights.length)];
-    
-    // Add the insight as a bot message
-    setMessages(prev => [
-      ...prev,
-      { 
-        type: 'bot', 
-        text: `📊 Insight: ${randomInsight}`,
-        insightType: 'periodic',
-        followups: [] 
-      }
-    ]);
-    
-    // Track insight shown
-    trackChatbotInteraction('insight_shown', {
-      insight_text: randomInsight,
-      conversation_id: conversationId
-    });
-  };
-
-  // Generate suggestions based on user profile
-  const generateSuggestion = () => {
-    // Example suggestions - would be personalized in a real app
-    const suggestions = [
-      "Based on your profile, you might be eligible for a lower interest rate on your home loan. Would you like to explore refinancing options?",
-      "We noticed you have multiple small loans. Consolidating them could simplify your finances and potentially reduce your interest rates.",
-      "Your credit score qualifies you for our premium credit card with 2% cashback on all purchases."
-    ];
-    
-    const randomSuggestion = suggestions[Math.floor(Math.random() * suggestions.length)];
-    
-    // Add the suggestion as a bot message with followup buttons
-    setMessages(prev => [
-      ...prev,
-      { 
-        type: 'bot', 
-        text: `💡 Suggestion: ${randomSuggestion}`,
-        suggestionType: 'profile-based',
-        followups: [
-          { 
-            text: "Tell me more", 
-            promptId: 20, // Use a specific promptId for suggestion follow-ups
-            httpRequestType: 'GET'
-          },
-          {
-            text: "No thanks",
-            promptId: currentPromptId, // Stay on current prompt
-            httpRequestType: 'GET'
-          }
-        ] 
-      }
-    ]);
-    
-    // Track suggestion shown
-    trackChatbotInteraction('suggestion_shown', {
-      suggestion_text: randomSuggestion,
-      conversation_id: conversationId
-    });
-  };
-
-  // Modify the toggleChatbot function to check for userId but not call fetchInitialResponse
   const toggleChatbot = () => {
     if (!userDetails?.id) {
       console.error("User ID is not available");
@@ -1029,44 +885,18 @@ const Chatbot = () => {
           followups: []
         }
       ]);
-      // fetchInitialResponse will be called by the useEffect when isOpen changes
     }
     
     setIsOpen(newIsOpen);
-    
-    // If chat is being closed, clear any active timers
-    if (!newIsOpen) {
-      if (insightTimerId) clearTimeout(insightTimerId);
-      if (suggestionTimerId) clearTimeout(suggestionTimerId);
-    }
-    
-    // Only track if this is a real user interaction (not just mounting)
-    if (userDetails?.id) {
-      // Track chatbot open/close
-      trackChatbotInteraction('toggle_chatbot', {
-        is_open: newIsOpen,
-        conversation_id: conversationId
-      });
-    }
   };
 
+  // Fetch response from backend with prompt ID
   const fetchResponse = async (promptId, requestData = null, requestType = 'GET', additional = null) => {
     try {
       setLoading(true);
       
-      // Only track if chat has been started by the user
-      if (chatStarted) {
-        // Track the request being made
-        trackChatbotInteraction('request', {
-          prompt_id: promptId,
-          request_type: requestType,
-          additional_param: additional,
-          conversation_id: conversationId
-        });
-      }
-      
       const additionalParam = additional || selectedBankId || selectedLoanId;
-      let url = `${API_URL}/api/userbot/query?prompt_id=${promptId}`;
+      let url = `${API_URL}/api/userbot/query?promptId=${promptId}`;
       if (additionalParam) {
         url += `&additional=${additionalParam}`;
       }
@@ -1103,18 +933,6 @@ const Chatbot = () => {
             emiSchedule: data.extraAction,
             followups: data.followups || []
           };
-          
-          // Only track if chat has been started by the user
-          if (chatStarted) {
-            // Track EMI schedule view
-            trackChatbotInteraction('emi_schedule_view', {
-              has_overdue: data.extraAction.overdue?.length > 0,
-              has_pending: data.extraAction.pending?.length > 0,
-              overdue_count: data.extraAction.overdue?.length || 0,
-              pending_count: data.extraAction.pending?.length || 0,
-              conversation_id: conversationId
-            });
-          }
         } else {
           // Regular message
           botMessage = {
@@ -1138,19 +956,6 @@ const Chatbot = () => {
         
         setMessages(prev => [...prev, botMessage]);
         setCurrentPromptId(promptId);
-        
-        // Only track if chat has been started by the user
-        if (chatStarted) {
-          // Track response received
-          trackChatbotInteraction('response_received', {
-            prompt_id: promptId,
-            has_followups: data.followups?.length > 0,
-            followup_count: data.followups?.length || 0,
-            has_extra_action: !!data.extraAction,
-            conversation_id: conversationId
-          });
-        }
-        
         return response.data;
       } else {
         throw new Error(response.data.message || "Server returned an unsuccessful response");
@@ -1165,211 +970,132 @@ const Chatbot = () => {
           followups: [] 
         }
       ]);
-      
-      // Only track if chat has been started by the user
-      if (chatStarted) {
-        // Track error
-        trackChatbotInteraction('error', {
-          error_type: 'fetch_response_error',
-          prompt_id: promptId,
-          error_message: error.response?.data?.message || error.message || 'Something went wrong',
-          conversation_id: conversationId
-        });
-      }
-      
       throw error;
     } finally {
       setLoading(false);
     }
   };
 
-  // New function to handle sending user queries to Llama 3
-  const sendUserQueryToLlama = async (query) => {
-    if (!query.trim() || !userId) return;
-    
-    try {
-      setLoading(true);
-      
-      // Add the user's message to the chat
-      setMessages(prev => [...prev, { type: 'user', text: query }]);
-      
-      // Track user query sent
-      trackChatbotInteraction('user_query_sent', {
-        query_length: query.length,
-        conversation_id: conversationId
-      });
-      
-      // Call the Llama 3 API
-      const response = await axios.get(`${LLAMA_API_URL}&user_id=${userId}`, {
-        params: {
-          query: query
-        },
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (response.data) {
-        // Add the AI's response to the chat
-        const botResponse = {
-          type: 'bot',
-          text: response.data.response || "I'm not sure how to respond to that.",
-          followups: response.data.followups || [
-            { text: "Return to main menu", promptId: 0, httpRequestType: 'GET' }
-          ]
-        };
-        
-        setMessages(prev => [...prev, botResponse]);
-        
-        // Track AI response received
-        trackChatbotInteraction('llama_response_received', {
-          response_length: botResponse.text.length,
-          has_followups: botResponse.followups?.length > 0,
-          conversation_id: conversationId
-        });
-      } else {
-        throw new Error("Invalid response from AI service");
-      }
-    } catch (error) {
-      console.error("Error querying Llama 3:", error);
-      setMessages(prev => [
-        ...prev,
-        { 
-          type: 'bot', 
-          text: `Sorry, I couldn't process your request: ${error.message}`,
-          followups: [
-            { text: "Return to main menu", promptId: 0, httpRequestType: 'GET' }
-          ] 
-        }
-      ]);
-      
-      // Track error
-      trackChatbotInteraction('llama_query_error', {
-        error_message: error.message,
-        conversation_id: conversationId
-      });
-    } finally {
-      setLoading(false);
-      setUserInput(''); // Clear the input field
-    }
-  };
-
-  // Handle user input submission
-  const handleUserInputSubmit = (e) => {
-    e.preventDefault();
-    if (userInput.trim()) {
-      sendUserQueryToLlama(userInput);
-      // Mark chat as started if not already
-      if (!chatStarted) {
-        setChatStarted(true);
-        setupPeriodicInsights();
-        setupSuggestions();
-      }
-    }
-  };
-
+  // Handle button click for predefined options
   const handleFollowupClick = async (followup) => {
-    // Mark chat as started when user clicks a followup
-    if (!chatStarted) {
-      setChatStarted(true);
-      setupPeriodicInsights();
-      setupSuggestions();
-    }
-    
-    // Track followup click
-    trackChatbotInteraction('followup_click', {
-      prompt_id: followup.promptId,
-      text: followup.text,
-      http_request_type: followup.httpRequestType,
-      conversation_id: conversationId
-    });
-    
     // Add user message to show what was selected
     setMessages(prev => [...prev, { type: 'user', text: followup.text }]);
     
-    // Check if this requires a form for data input
+    // Check if this requires a form for data input (PUT or POST request)
     if (followup.httpRequestType === 'PUT' || followup.httpRequestType === 'POST') {
-      if (followup.fieldsToAdd) {
-        // Track form initiation
-        trackChatbotInteraction('form_initiated', {
-          prompt_id: followup.promptId,
-          fields_count: followup.fieldsToAdd.length,
-          conversation_id: conversationId
-        });
-        
-        // Use the fieldsToAdd directly from the API response
-        setUpdateConfig({
-          promptId: followup.promptId,
-          method: followup.httpRequestType,
-          fields: followup.fieldsToAdd
-        });
+      // Determine which action is being attempted based on the prompt ID or text
+      let actionType = '';
+      let pagePath = '';
+      
+      // Extract the action name from the followup text
+      // Remove any text within square brackets for cleaner action names
+      const cleanedText = followup.text.replace(/\[.*?\]/g, '').trim();
+      
+      // Map prompt IDs or keywords in the followup text to specific pages
+      if (followup.text.toLowerCase().includes('add bank') || 
+          followup.text.toLowerCase().includes('bank account')) {
+        actionType = 'adding or managing bank accounts';
+        pagePath = '/profile/bank-accounts';
+      } else if (followup.text.toLowerCase().includes('update profile') || 
+                followup.text.toLowerCase().includes('profile')) {
+        actionType = 'updating your profile';
+        pagePath = '/profile';
+      } else if (followup.text.toLowerCase().includes('payment') || 
+                followup.text.toLowerCase().includes('pay')) {
+        actionType = 'making a payment';
+        pagePath = '/payments';
+      } else if (followup.text.toLowerCase().includes('loan') || 
+                followup.text.toLowerCase().includes('borrow')) {
+        actionType = 'managing your loans';
+        pagePath = '/loans';
       } else {
-        // Fallback to regex extraction for backward compatibility
-        // Update the code that handles the regex extraction and form configuration
-          const regex = /\[(.*?)\]/;
-          const match = followup.text.match(regex);
-
-          if (match && match[1]) {
-            const fieldsText = match[1];
-            const fields = [];
-            
-            // Check if Bank Account Type is mentioned
-            if (fieldsText.includes("Bank Account Type")) {
-              // Add the accountType as an object with predefined options
-              fields.push({ accountType: ["SAVINGS", "CURRENT"] });
-            }
-            
-            // Process other fields as simple text fields
-            fieldsText.split('/').forEach(field => {
-              field = field.trim();
-              if (field === "Bank Account Type") {
-                // Already handled above
-              } else if (field === "Account Holder Name") {
-                fields.push("accountHolderName");
-              } else {
-                // For any other fields, add them as is
-                fields.push(field);
-              }
-            });
-            
-            // Track form initiation with regex extraction
-            trackChatbotInteraction('form_initiated_regex', {
-              prompt_id: followup.promptId,
-              fields_count: fields.length,
-              fields: fields,
-              conversation_id: conversationId
-            });
-            
-            setUpdateConfig({
-              promptId: followup.promptId,
-              method: followup.httpRequestType,
-              fields: fields
-            });
-          } else {
-            // No form needed, proceed with request
-            const additionalParam = selectedBankId || selectedLoanId;
-            fetchResponse(followup.promptId, null, followup.httpRequestType, additionalParam);
-          }
+        // Default fallback
+        actionType = cleanedText.toLowerCase();
+        pagePath = '/dashboard';
       }
+      
+      // Set popup properties
+      setPopupTitle('Action Required');
+      setPopupMessage(`The functionality for "${actionType}" is available on a different page of our application.`);
+      setPopupLink(pagePath);
+      setIsPopupOpen(true);
+      
+      // Also add a bot message to indicate the action
+      setMessages(prev => [...prev, { 
+        type: 'bot', 
+        text: `To ${actionType}, please visit our ${actionType.split(' ')[0]} page.`,
+        followups: [] 
+      }]);
     } else {
       // Simple GET request with optional additional parameter
-      const additionalParam = selectedBankId || selectedLoanId;
+      let additionalParam = null;
+      
+      // Use the appropriate additional parameter based on the context
+      if (selectedLoanId && followup.additionalParam === selectedLoanId) {
+        additionalParam = selectedLoanId;
+      } else if (selectedBankId && followup.additionalParam === selectedBankId) {
+        additionalParam = selectedBankId;
+      }
+      
       fetchResponse(followup.promptId, null, 'GET', additionalParam);
+    }
+  };
+
+  // Process user text input directly without Rasa
+  const handleUserInput = async (e) => {
+    e.preventDefault();
+    
+    if (!userInput.trim()) return;
+    
+    // Add user message to chat
+    setMessages(prev => [...prev, { type: 'user', text: userInput }]);
+    
+    // Clear input field
+    setUserInput('');
+    
+    // Set loading state
+    setLoading(true);
+    
+    try {
+      // Basic keyword matching to determine which prompt to fetch
+      // This is a simple replacement for Rasa
+      let promptId = 0; // Default to main menu
+      const lowercaseInput = userInput.toLowerCase();
+      
+      // Simple keyword matching - can be expanded based on requirements
+      if (lowercaseInput.includes("loan") || lowercaseInput.includes("borrow")) {
+        promptId = 1; // Assuming prompt ID 1 is for loan-related queries
+      } else if (lowercaseInput.includes("payment") || lowercaseInput.includes("pay")) {
+        promptId = 2; // Assuming prompt ID 2 is for payment-related queries
+      } else if (lowercaseInput.includes("account") || lowercaseInput.includes("bank")) {
+        promptId = 3; // Assuming prompt ID 3 is for account-related queries
+      } else if (lowercaseInput.includes("emi") || lowercaseInput.includes("schedule")) {
+        promptId = 4; // Assuming prompt ID 4 is for EMI schedule queries
+      } else if (lowercaseInput.includes("help") || lowercaseInput.includes("support")) {
+        promptId = 5; // Assuming prompt ID 5 is for help/support
+      }
+      
+      // Fetch the corresponding response from the backend
+      await fetchResponse(promptId);
+    } catch (error) {
+      console.error('Error processing user input:', error);
+      setMessages(prev => [
+        ...prev,
+        {
+          type: 'bot',
+          text: "Sorry, I'm having trouble understanding. Please try again later.",
+          followups: []
+        }
+      ]);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleButtonClick = handleFollowupClick;
 
   const toggleEmiDetails = (emiId) => {
-    const isExpanding = expandedEmiId !== emiId;
     setExpandedEmiId(expandedEmiId === emiId ? null : emiId);
-    
-    // Track EMI details toggle
-    trackChatbotInteraction('emi_details_toggle', {
-      emi_id: emiId,
-      action: isExpanding ? 'expand' : 'collapse',
-      conversation_id: conversationId
-    });
   };
 
   const formatDate = (dateString) => {
@@ -1393,14 +1119,6 @@ const Chatbot = () => {
       setLoading(true);
       try {
         console.log("Submitting formData:", formData);
-        
-        // Track form submission attempt
-        trackFormSubmission('chatbot_form', true, {
-          prompt_id: updateConfig.promptId,
-          method: updateConfig.method,
-          form_data_keys: Object.keys(formData),
-          conversation_id: conversationId
-        });
   
         // Transform keys to camelCase if they contain spaces
         const transformedData = {};
@@ -1432,14 +1150,6 @@ const Chatbot = () => {
           text: `Error: ${error.response?.data?.message || error.message || 'Failed to process your request'}`,
           followups: []
         }]);
-        
-        // Track form submission error
-        trackFormSubmission('chatbot_form', false, {
-          prompt_id: updateConfig.promptId,
-          method: updateConfig.method,
-          error_message: error.response?.data?.message || error.message || 'Failed to process your request',
-          conversation_id: conversationId
-        });
       } finally {
         setLoading(false);
         setUpdateConfig(null);
@@ -1452,30 +1162,17 @@ const Chatbot = () => {
       const newHistory = [...history];
       const lastPromptId = newHistory.pop();
       setHistory(newHistory);
-      
-      // Track back navigation
-      trackChatbotInteraction('back_navigation', {
-        from_prompt_id: currentPromptId,
-        to_prompt_id: lastPromptId,
-        conversation_id: conversationId
-      });
 
-      if (selectedLoanId || selectedBankId) {
-        setSelectedLoanId(null);
-        setSelectedBankId(null);
-      }
+      // Reset selection when going back
+      setSelectedLoanId(null);
+      setSelectedBankId(null);
+      
       fetchResponse(lastPromptId);
     }
   };
 
   const handleMainMenuClick = () => {
     if (messages.length > 0) {
-      // Track main menu navigation
-      trackChatbotInteraction('main_menu_click', {
-        from_prompt_id: currentPromptId,
-        conversation_id: conversationId
-      });
-      
       setHistory([]);
       setSelectedLoanId(null);
       setSelectedBankId(null);
@@ -1490,12 +1187,6 @@ const Chatbot = () => {
     }
     
     try {
-      // Track feedback submission attempt
-      trackChatbotInteraction('feedback_submit', {
-        feedback_length: feedbackText.length,
-        conversation_id: conversationId
-      });
-      
       // Use the same API_URL from the environment variable
       await axios.post(`${API_URL}/api/userbot/feedback`, {
         userId: userId,
@@ -1512,11 +1203,6 @@ const Chatbot = () => {
       setFeedbackText("");
       setFeedbackSubmitStatus('success');
       
-      // Track successful feedback submission
-      trackChatbotInteraction('feedback_success', {
-        conversation_id: conversationId
-      });
-      
       // Close the feedback modal after a brief delay
       setTimeout(() => {
         setIsFeedbackOpen(false);
@@ -1526,12 +1212,6 @@ const Chatbot = () => {
     } catch (error) {
       console.error("Error submitting feedback:", error);
       setFeedbackSubmitStatus('Failed to submit feedback. Please try again later.');
-      
-      // Track feedback submission error
-      trackChatbotInteraction('feedback_error', {
-        error_message: error.message,
-        conversation_id: conversationId
-      });
     }
   };
 
@@ -1541,68 +1221,69 @@ const Chatbot = () => {
     }
   }, [messages]);
 
-  // Handle loan selection with tracking
-  const handleLoanSelection = (loanId) => {
-    setSelectedLoanId(loanId);
-    
-    // Track loan selection
-    trackChatbotInteraction('loan_selected', {
-      loan_id: loanId,
-      conversation_id: conversationId
-    });
-  };
+  // Replace your existing renderLoanBoxes function with this:
 
-  // Handle bank selection with tracking
-  const handleBankSelection = (bankId) => {
-    setSelectedBankId(bankId);
-    
-    // Track bank selection
-    trackChatbotInteraction('bank_selected', {
-      bank_id: bankId,
-      conversation_id: conversationId
-    });
-  };
-
-  // Render loan selection boxes
-  const renderLoanBoxes = (loans, displayOnly = false) => {
-    if (!loans || loans.length === 0) return null;
-    
-    // For display-only case (showing loan type and status)
-    if (displayOnly || (loans.length > 0 && loans[0].hasOwnProperty('status') && !loans[0].hasOwnProperty('loan_id'))) {
-      return (
-        <div className="loan-status-grid">
-          {loans.map((loan, index) => (
-            <div key={index} className="loan-status-box">
-              <div className="loan-type">
-                {loan.type.split('_').map(word => word.charAt(0) + word.substring(1).toLowerCase()).join(' ')}
-              </div>
-              <div className={`loan-status ${loan.status.toLowerCase()}`}>
-                {loan.status.charAt(0) + loan.status.substring(1).toLowerCase()}
-              </div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-    
-    // For selectable loan buttons
+const renderLoanBoxes = (loans, displayOnly = false) => {
+  if (!loans || loans.length === 0) return null;
+  
+  // First, let's debug the loan objects to see their structure
+  console.log("Loan objects:", loans);
+  
+  // For display-only case (showing loan type and status)
+  if (displayOnly || (loans.length > 0 && loans[0].hasOwnProperty('status') && 
+      !(loans[0].hasOwnProperty('loan_id') || loans[0].hasOwnProperty('id') || loans[0].hasOwnProperty('loanId')))) {
     return (
-      <div className="loan-buttons-grid">
+      <div className="loan-status-grid">
         {loans.map((loan, index) => (
-          <button 
-            key={index} 
-            className={`loan-select-button ${loan.loan_id === selectedLoanId ? 'selected' : ''}`}
-            onClick={() => handleLoanSelection(loan.loan_id)}
-          >
-            {loan.type.split('_').map(word => word.charAt(0) + word.substring(1).toLowerCase()).join(' ')}
-            {loan.loan_id === selectedLoanId && (
-              <span className="loan-selected-indicator">✓</span>
-            )}
-          </button>
+          <div key={index} className="loan-status-box">
+            <div className="loan-type">
+              {loan.type.split('_').map(word => word.charAt(0) + word.substring(1).toLowerCase()).join(' ')}
+            </div>
+            <div className={`loan-status ${loan.status.toLowerCase()}`}>
+              {loan.status.charAt(0) + loan.status.substring(1).toLowerCase()}
+            </div>
+          </div>
         ))}
       </div>
     );
-  };
+  }
+  
+  // For selectable loan buttons
+  return (
+    <div className="loan-buttons-grid">
+      {loans.map((loan, index) => {
+        // Determine which property contains the loan ID
+        // Try different possible property names
+        const loanIdValue = loan.loan_id || loan.id || loan.loanId || loan.user_id || index.toString();
+        
+        // IMPORTANT: Ensure we have a valid ID, fallback to index if needed
+        const loanId = String(loanIdValue);
+        const currentSelectedId = String(selectedLoanId);
+        
+        console.log(`Loan button ${index}: ID=${loanId}, Type=${loan.type}, Selected=${loanId === currentSelectedId}`);
+        
+        // Use strict equality for comparison
+        const isSelected = loanId === currentSelectedId;
+        
+        return (
+          <button 
+            key={`loan-button-${index}-${loanId}`} // Use index and ID for uniqueness
+            className={`loan-select-button ${isSelected ? 'selected' : ''}`}
+            onClick={() => {
+              console.log(`Clicking loan button: ${loanId}`);
+              setSelectedLoanId(loanId);
+            }}
+          >
+            {loan.type.split('_').map(word => word.charAt(0) + word.substring(1).toLowerCase()).join(' ')}
+            {isSelected && (
+              <span className="loan-selected-indicator">✓</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
 
   // Render bank selection buttons
   const renderBankButtons = (banks) => {
@@ -1610,39 +1291,72 @@ const Chatbot = () => {
     
     return (
       <div className="loan-buttons-grid">
-        {banks.map((bank, index) => (
-          <button 
-            key={index} 
-            className={`loan-select-button ${bank.bankId === selectedBankId ? 'selected' : ''}`}
-            onClick={() => handleBankSelection(bank.bankId)}
-          >
-            {bank.bankName}: {bank.accountNumber}
-            {bank.bankId === selectedBankId && (
-              <span className="loan-selected-indicator">✓</span>
-            )}
-          </button>
-        ))}
+        {banks.map((bank, index) => {
+          // Convert bankId to string to ensure consistent comparison
+          const bankId = String(bank.bankId);
+          const isSelected = bankId === String(selectedBankId);
+          
+          return (
+            <button 
+              key={index} 
+              className={`loan-select-button ${isSelected ? 'selected' : ''}`}
+              onClick={() => setSelectedBankId(bankId)}
+            >
+              {bank.bankName}: {bank.accountNumber}
+              {isSelected && (
+                <span className="loan-selected-indicator">✓</span>
+              )}
+            </button>
+          );
+        })}
       </div>
     );
   };
 
-  // Render followup buttons
-  const renderFollowupButtons = (followups, needsLoanSelection = false, needsBankSelection = false) => {
+  // Render followup buttons only if a selection has been made
+  const renderFollowupButtons = (followups, isLoanContext, isBankContext) => {
     if (!followups || followups.length === 0) return null;
     
-    // If selection is required but not made, disable the buttons
-    const isDisabled = (needsLoanSelection && !selectedLoanId) || (needsBankSelection && !selectedBankId);
+    // For loan context, only show if a loan is selected
+    if (isLoanContext && !selectedLoanId) {
+      return (
+        <div className="followup-instructions">
+          Please select a loan to continue
+        </div>
+      );
+    }
     
+    // For bank context, only show if a bank is selected
+    if (isBankContext && !selectedBankId) {
+      return (
+        <div className="followup-instructions">
+          Please select a bank account to continue
+        </div>
+      );
+    }
+    
+    // Otherwise, render enabled followup buttons
     return (
       <div className="followup-buttons">
-        {followups.map((followup, index) => (
-          <button
-            key={index}
-            className={`followup-button ${isDisabled ? 'disabled' : ''}`}
-            onClick={() => !isDisabled && handleFollowupClick(followup)}
-            disabled={isDisabled}
+        {followups.map((followup, idx) => (
+          <button 
+            key={idx} 
+            onClick={() => {
+              // Add the relevant ID to the followup data
+              const enhancedFollowup = {
+                ...followup,
+                additionalParam: isLoanContext 
+                  ? selectedLoanId 
+                  : isBankContext 
+                    ? selectedBankId 
+                    : null
+              };
+              
+              handleFollowupClick(enhancedFollowup);
+            }}
+            className="followup-button"
           >
-            {followup.text}
+            {followup.text.replace(/\[.*?\]/g, '')}
           </button>
         ))}
       </div>
@@ -1653,138 +1367,141 @@ const Chatbot = () => {
   const renderExtraAction = (extraAction) => {
     if (!extraAction) return null;
     
-    // Render structured data as a neat table
+    // If extraAction is a string or number, return it directly
+    if (typeof extraAction !== 'object' || extraAction === null) {
+      return <span>{extraAction}</span>;
+    }
+    
+    // If extraAction is an object, format each key and display with its value
     return (
-      <div className="extra-action-content">
-        {Object.entries(extraAction).map(([key, value]) => {
-          // Skip rendering loans and bankDetails which have special rendering
-          if (key === 'loans' || key === 'bankDetails' || 
-              key === 'overdue' || key === 'pending' || key === 'lastPaid') {
-            return null;
-          }
-          
-          return (
-            <div key={key} className="extra-action-item">
-              <span className="extra-action-key">{formatKey(key)}:</span>
-              <span className="extra-action-value">
-                {typeof value === 'object' ? JSON.stringify(value) : value}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+      <>
+        {Object.entries(extraAction).map(([key, value]) => (
+          <div key={key} className="extra-action-item">
+            <strong>{formatKey(key)}:</strong> {value}
+          </div>
+        ))}
+      </>
     );
   };
 
-  // Render EMI schedule
   const renderEmiSchedule = (emiSchedule) => {
     if (!emiSchedule) return null;
     
     return (
-      <div className="emi-schedule">
-        {/* Overdue EMIs */}
-        {emiSchedule.overdue && emiSchedule.overdue.length > 0 && (
-          <div className="emi-section overdue">
-            <h4>Overdue EMIs</h4>
+      <div className="emi-schedule-container">
+        {/* Overdue EMIs section */}
+        <div className="emi-category">
+          <h4>Overdue EMIs</h4>
+          {emiSchedule.overdue && emiSchedule.overdue.length > 0 ? (
             <div className="emi-list">
-              {emiSchedule.overdue.map((emi, index) => (
-                <div key={index} className="emi-item overdue">
-                  <div className="emi-header" onClick={() => toggleEmiDetails(emi.id)}>
-                    <div className="emi-date">{formatDate(emi.dueDate)}</div>
-                    <div className="emi-amount">₹{emi.amount.toLocaleString()}</div>
-                    <div className="emi-toggle">
-                      {expandedEmiId === emi.id ? '▼' : '▶'}
-                    </div>
-                  </div>
+              {emiSchedule.overdue.map((emi) => (
+                <div key={emi.emiId} className="emi-item">
+                  <button 
+                    className="emi-dropdown-button" 
+                    onClick={() => toggleEmiDetails(emi.emiId)}
+                  >
+                    Due: {formatDate(emi.dueDate)} {expandedEmiId === emi.emiId ? '▲' : '▼'}
+                  </button>
                   
-                  {expandedEmiId === emi.id && (
+                  {expandedEmiId === emi.emiId && (
                     <div className="emi-details">
-                      {Object.entries(emi).map(([key, value]) => {
-                        if (key === 'id' || key === 'dueDate' || key === 'amount') return null;
-                        return (
-                          <div key={key} className="emi-detail-item">
-                            <span className="emi-detail-key">{formatKey(key)}:</span>
-                            <span className="emi-detail-value">
-                              {key.includes('Date') ? formatDate(value) : value}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        
-        {/* Pending EMIs */}
-        {emiSchedule.pending && emiSchedule.pending.length > 0 && (
-          <div className="emi-section pending">
-            <h4>Upcoming EMIs</h4>
-            <div className="emi-list">
-              {emiSchedule.pending.map((emi, index) => (
-                <div key={index} className="emi-item pending">
-                  <div className="emi-header" onClick={() => toggleEmiDetails(emi.id)}>
-                    <div className="emi-date">{formatDate(emi.dueDate)}</div>
-                    <div className="emi-amount">₹{emi.amount.toLocaleString()}</div>
-                    <div className="emi-toggle">
-                      {expandedEmiId === emi.id ? '▼' : '▶'}
-                    </div>
-                  </div>
-                  
-                  {expandedEmiId === emi.id && (
-                    <div className="emi-details">
-                      {Object.entries(emi).map(([key, value]) => {
-                        if (key === 'id' || key === 'dueDate' || key === 'amount') return null;
-                        return (
-                          <div key={key} className="emi-detail-item">
-                            <span className="emi-detail-key">{formatKey(key)}:</span>
-                            <span className="emi-detail-value">
-                              {key.includes('Date') ? formatDate(value) : value}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        
-        {/* Last Paid EMIs */}
-        {emiSchedule.lastPaid && (
-          <div className="emi-section last-paid">
-            <h4>Last Paid EMI</h4>
-            <div className="emi-item last-paid">
-              <div className="emi-header" onClick={() => toggleEmiDetails('lastPaid')}>
-                <div className="emi-date">{formatDate(emiSchedule.lastPaid.dueDate)}</div>
-                <div className="emi-amount">₹{emiSchedule.lastPaid.amount.toLocaleString()}</div>
-                <div className="emi-toggle">
-                  {expandedEmiId === 'lastPaid' ? '▼' : '▶'}
-                </div>
-              </div>
-              
-              {expandedEmiId === 'lastPaid' && (
-                <div className="emi-details">
-                  {Object.entries(emiSchedule.lastPaid).map(([key, value]) => {
-                    if (key === 'id' || key === 'dueDate' || key === 'amount') return null;
-                    return (
-                      <div key={key} className="emi-detail-item">
-                        <span className="emi-detail-key">{formatKey(key)}:</span>
-                        <span className="emi-detail-value">
-                          {key.includes('Date') ? formatDate(value) : value}
-                        </span>
+                      <div className="emi-detail-item">
+                        <span className="detail-label">EMI Amount:</span>
+                        <span className="detail-value">₹{emi.emiAmount.toFixed(2)}</span>
                       </div>
-                    );
-                  })}
+                      <div className="emi-detail-item">
+                        <span className="detail-label">Status:</span>
+                        <span className="detail-value emi-status-overdue">{emi.status}</span>
+                      </div>
+                      {emi.lateFee > 0 && (
+                        <div className="emi-detail-item">
+                          <span className="detail-label">Late Fee:</span>
+                          <span className="detail-value emi-late-fee">₹{emi.lateFee.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
+              ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="emi-empty-state">No Overdue EMIs</div>
+          )}
+        </div>
+
+        {/* Last Paid EMIs section */}
+        <div className="emi-category">
+          <h4>Last Paid EMIs</h4>
+          {emiSchedule.lastPaid && emiSchedule.lastPaid.length > 0 ? (
+            <div className="emi-list">
+              {emiSchedule.lastPaid.map((emi) => (
+                <div key={emi.emiId} className="emi-item">
+                  <button 
+                    className="emi-dropdown-button paid" 
+                    onClick={() => toggleEmiDetails(emi.emiId)}
+                  >
+                    Paid: {formatDate(emi.dueDate)} {expandedEmiId === emi.emiId ? '▲' : '▼'}
+                  </button>
+                  
+                  {expandedEmiId === emi.emiId && (
+                    <div className="emi-details">
+                      <div className="emi-detail-item">
+                        <span className="detail-label">EMI Amount:</span>
+                        <span className="detail-value">₹{emi.emiAmount.toFixed(2)}</span>
+                      </div>
+                      <div className="emi-detail-item">
+                        <span className="detail-label">Status:</span>
+                        <span className="detail-value emi-status-paid">{emi.status}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="emi-empty-state">No Last Paid EMIs</div>
+          )}
+        </div>
+
+        {/* Pending EMIs section */}
+        <div className="emi-category">
+          <h4>Pending EMIs</h4>
+          {emiSchedule.pending && emiSchedule.pending.length > 0 ? (
+            <div className="emi-list">
+              {emiSchedule.pending.map((emi) => (
+                <div key={emi.emiId} className="emi-item">
+                  <button 
+                    className="emi-dropdown-button pending" 
+                    onClick={() => toggleEmiDetails(emi.emiId)}
+                  >
+                    Due: {formatDate(emi.dueDate)} {expandedEmiId === emi.emiId ? '▲' : '▼'}
+                  </button>
+                  
+                  {expandedEmiId === emi.emiId && (
+                    <div className="emi-details">
+                      <div className="emi-detail-item">
+                        <span className="detail-label">EMI Amount:</span>
+                        <span className="detail-value">₹{emi.emiAmount.toFixed(2)}</span>
+                      </div>
+                      <div className="emi-detail-item">
+                        <span className="detail-label">Status:</span>
+                        <span className="detail-value emi-status-pending">{emi.status}</span>
+                      </div>
+                      {emi.lateFee > 0 && (
+                        <div className="emi-detail-item">
+                          <span className="detail-label">Late Fee:</span>
+                          <span className="detail-value emi-late-fee">₹{emi.lateFee.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="emi-empty-state">No Pending EMIs</div>
+          )}
+        </div>
       </div>
     );
   };
@@ -1908,22 +1625,47 @@ const Chatbot = () => {
             
             <div ref={messagesEndRef} />
           </div>
+
+          {/* Action Popup for PUT/POST requests */}
+          {isPopupOpen && (
+            <div className="action-popup-overlay">
+              <div className="action-popup">
+                <div className="action-popup-header">
+                  <h3>{popupTitle}</h3>
+                  <button onClick={() => setIsPopupOpen(false)} className="close-button">
+                    <FaTimes />
+                  </button>
+                </div>
+                <div className="action-popup-body">
+                  <p>{popupMessage}</p>
+                  <a href={popupLink} className="action-link" target="_blank" rel="noopener noreferrer">
+                    <FaExternalLinkAlt style={{ marginRight: "8px" }} />
+                    Go to page
+                  </a>
+                </div>
+                <div className="action-popup-footer">
+                  <button onClick={() => setIsPopupOpen(false)} className="cancel-button">
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           
-          {/* Text input field for user queries */}
-          <form onSubmit={handleUserInputSubmit} className="chatbot-input-container">
+          {/* Text input form */}
+          <form className="chatbot-input-container" onSubmit={handleUserInput}>
             <input
               type="text"
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
-              placeholder="Type your question here..."
-              className="chatbot-input"
-              ref={inputRef}
+              placeholder="Type your message..."
               disabled={loading}
+              className="chatbot-input"
             />
             <button 
               type="submit" 
-              className="send-button"
-              disabled={!userInput.trim() || loading}
+              disabled={loading || !userInput.trim()}
+              className="chatbot-send-button"
             >
               <FaPaperPlane />
             </button>

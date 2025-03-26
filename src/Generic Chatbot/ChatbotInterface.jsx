@@ -217,6 +217,7 @@ const ChatbotInterface = ({ onClose, initialData }) => {
 
     // If initial data is available
     if (initialData && initialData.initialPrompts && initialData.initialPrompts.length > 0) {
+      // Directly use the nested initialPrompts array
       setOptions(initialData.initialPrompts);
       setMainOptions(initialData.initialPrompts);
       setIsInitialized(true);
@@ -252,7 +253,7 @@ const ChatbotInterface = ({ onClose, initialData }) => {
         });
       };
     }
-  }, [isInitialized, options]);
+  }, [isInitialized, options, initialData, trackChatbotInteraction]);
 
   useEffect(() => {
     scrollToBottom();
@@ -535,9 +536,9 @@ const ChatbotInterface = ({ onClose, initialData }) => {
                 {options.length > 0 &&
                   options.map(option => (
                     <OptionButton
-                      key={option.prompt_id || uuidv4()}
+                      key={option.promptId || uuidv4()}
                       type="default"
-                      onClick={() => handleOptionClick(option.prompt_id, option.text)}
+                      onClick={() => handleOptionClick(option.promptId, option.text)}
                     >
                       {option.text}
                     </OptionButton>
