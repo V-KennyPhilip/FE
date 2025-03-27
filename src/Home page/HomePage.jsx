@@ -1,5 +1,6 @@
 // HomePage.jsx
 import React, { useState, useEffect } from 'react';
+import { calculateSessionDuration, clearLoginData } from '../utils/authTracking';
 import { useNavigate } from 'react-router-dom';
 import { 
   Layout, 
@@ -17,7 +18,7 @@ import {
   Divider, 
   Avatar, 
   ConfigProvider,
-  Spin
+  Spin 
 } from 'antd';
 import { 
   UserOutlined, 
@@ -28,7 +29,9 @@ import {
   PhoneOutlined, 
   RiseOutlined, 
   FallOutlined, 
-  BellOutlined
+  BellOutlined,  
+  LineChartOutlined, 
+  StopOutlined
 } from '@ant-design/icons';
 import { keyframes } from '@emotion/react';
 import styled from '@emotion/styled';
@@ -222,6 +225,9 @@ const LogoutButton = styled(Button)`
   &.logging-out {
     position: relative;
     overflow: hidden;
+    cursor: not-allowed;
+    opacity: 0.7;
+    transition: opacity 0.3s;
     
     &::after {
       content: '';
@@ -235,9 +241,26 @@ const LogoutButton = styled(Button)`
         rgba(255, 255, 255, 0.3), 
         rgba(255, 255, 255, 0));
       background-size: 200% 100%;
-      animation: ${shimmerAnimation} 1.5s infinite;
+      animation: ${shimmerAnimation} 1.5s linear infinite;
+      mask: linear-gradient(transparent, white);
+    }
+    span {
+      visibility: hidden;
     }
   }
+`;
+
+const LoadingOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
 `;
 
 const StatisticLabel = styled.div`
@@ -261,9 +284,129 @@ const ActivityItem = styled.div`
 const HomePage = () => {
   const [portfolioData, setPortfolioData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [notifications, setNotifications] = useState(3);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [amplitudeOptOut, setAmplitudeOptOut] = useState(
+    localStorage.getItem('amplitudeOptOut') === 'true'
+  );
   const navigate = useNavigate();
+  const [lastActivityTime, setLastActivityTime] = useState(new Date());
+  const [isIdle, setIsIdle] = useState(false);
+  const IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes in milliseconds
+  const HEARTBEAT_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+  // Add this effect for tracking user activity
+useEffect(() => {
+  // Function to track user activity
+  const handleUserActivity = () => {
+    setLastActivityTime(new Date());
+    
+    if (isIdle) {
+      setIsIdle(false);
+      
+      // Track user returning from idle state
+      if (window.amplitude && !amplitudeOptOut) {
+        const loginTimestamp = localStorage.getItem('userLoginTimestamp');
+        let currentSessionDuration = null;
+        
+        if (loginTimestamp) {
+          const loginTime = new Date(loginTimestamp).getTime();
+          const currentTime = new Date().getTime();
+          currentSessionDuration = Math.floor((currentTime - loginTime) / 1000);
+        }
+        
+        window.amplitude.track('User Active After Idle', {
+          timestamp: new Date().toISOString(),
+          idle_duration_seconds: Math.floor((new Date().getTime() - lastActivityTime.getTime()) / 1000),
+          current_session_duration_seconds: currentSessionDuration
+        });
+      }
+    }
+  };
+  
+  // Set up event listeners for user activity
+  const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+  activityEvents.forEach(event => {
+    window.addEventListener(event, handleUserActivity);
+  });
+  
+  // Set up interval to check for idle state
+  const idleInterval = setInterval(() => {
+    const timeSinceLastActivity = new Date().getTime() - lastActivityTime.getTime();
+    
+    if (!isIdle && timeSinceLastActivity > IDLE_TIMEOUT) {
+      setIsIdle(true);
+      
+      // Track user becoming idle
+      if (window.amplitude && !amplitudeOptOut) {
+        const loginTimestamp = localStorage.getItem('userLoginTimestamp');
+        let currentSessionDuration = null;
+        
+        if (loginTimestamp) {
+          const loginTime = new Date(loginTimestamp).getTime();
+          const currentTime = new Date().getTime();
+          currentSessionDuration = Math.floor((currentTime - loginTime) / 1000);
+        }
+        
+        window.amplitude.track('User Idle', {
+          timestamp: new Date().toISOString(),
+          time_since_last_activity_seconds: Math.floor(timeSinceLastActivity / 1000),
+          current_session_duration_seconds: currentSessionDuration
+        });
+      }
+    }
+  }, 60000); // Check every minute
+  
+  // Set up heartbeat interval for active sessions
+  const heartbeatInterval = setInterval(() => {
+    if (!isIdle && !amplitudeOptOut && window.amplitude) {
+      const loginTimestamp = localStorage.getItem('userLoginTimestamp');
+      
+      if (loginTimestamp) {
+        const loginTime = new Date(loginTimestamp).getTime();
+        const currentTime = new Date().getTime();
+        const currentSessionDuration = Math.floor((currentTime - loginTime) / 1000);
+        
+        window.amplitude.track('Session Heartbeat', {
+          timestamp: new Date().toISOString(),
+          current_session_duration_seconds: currentSessionDuration,
+          current_session_duration_minutes: Math.floor(currentSessionDuration / 60),
+          current_session_duration_hours: Math.floor(currentSessionDuration / 3600)
+        });
+      }
+    }
+  }, HEARTBEAT_INTERVAL);
+  
+  // Clean up event listeners and intervals on unmount
+  return () => {
+    activityEvents.forEach(event => {
+      window.removeEventListener(event, handleUserActivity);
+    });
+    clearInterval(idleInterval);
+    clearInterval(heartbeatInterval);
+    
+    // If the user is navigating away (not logging out), 
+    // we could track session end here too, but that might
+    // duplicate with logout tracking
+  };
+}, [lastActivityTime, isIdle, amplitudeOptOut]);
+  
+  // 4. Add this effect to update Amplitude opt-out preference
+  useEffect(() => {
+    localStorage.setItem('amplitudeOptOut', amplitudeOptOut);
+    
+    if (window.amplitude) {
+      window.amplitude.setOptOut(amplitudeOptOut);
+      
+      if (!amplitudeOptOut) {
+        window.amplitude.track('Analytics Opted In');
+      } else {
+        window.amplitude.track('Analytics Opted Out', {
+          'timestamp': new Date().toISOString()
+        });
+      }
+    }
+  }, [amplitudeOptOut]);
   
   // Simulated data for mock Dashboard
   const [accountSummary, setAccountSummary] = useState({
@@ -325,27 +468,57 @@ const HomePage = () => {
     { key: 'apply', label: 'Apply for Loan' }
   ];
   
-  // Logout handler with animation
   const handleLogout = async () => {
     setIsLoggingOut(true);
     
     try {
+      // Make API call to server for logout
       const response = await fetch('http://localhost:8080/api/logout', {
         method: 'POST',
         credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
       
-      // Regardless of response, show animation for at least 1.5 seconds
+      // Guaranteed minimum loading time for animation visibility
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       if (response.ok) {
-        navigate('/auth', { state: { logoutMessage: 'Logout successful.' } });
+        // Calculate session duration
+        const sessionDuration = calculateSessionDuration();
+        
+        // Track successful logout event with session duration
+        if (window.amplitude && !amplitudeOptOut && sessionDuration) {
+          window.amplitude.track('User Logged Out Successfully', {
+            'timestamp': new Date().toISOString(),
+            'session_duration_seconds': sessionDuration.seconds,
+            'session_duration_minutes': sessionDuration.minutes,
+            'session_duration_hours': sessionDuration.hours
+          });
+        }
+        
+        // Clear user data including login timestamp
+        clearLoginData();
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('authToken');
+        
+        // Navigate to login page with success message
+        navigate('/auth', { 
+          state: { 
+            logoutMessage: 'You have been successfully logged out.' 
+          } 
+        });
       } else {
-        console.error('Logout failed.');
+        // Handle failed logout
+        const errorData = await response.json();
+        console.error('Logout failed:', errorData);
+        message.error('Failed to logout. Please try again.');
         setIsLoggingOut(false);
       }
     } catch (error) {
       console.error('Error during logout:', error);
+      message.error('Network error during logout. Please check your connection and try again.');
       setIsLoggingOut(false);
     }
   };
@@ -373,7 +546,17 @@ const HomePage = () => {
       icon: <PhoneOutlined />
     },
     {
-      key: 'divider',
+      key: 'divider-1',
+      type: 'divider'
+    },
+    {
+      key: 'analytics',
+      label: amplitudeOptOut ? 'Enable Analytics' : 'Disable Analytics',
+      icon: amplitudeOptOut ? <LineChartOutlined /> : <StopOutlined />,
+      onClick: () => setAmplitudeOptOut(!amplitudeOptOut)
+    },
+    {
+      key: 'divider-2',
       type: 'divider'
     },
     {
@@ -385,8 +568,9 @@ const HomePage = () => {
           onClick={handleLogout}
           loading={isLoggingOut}
           icon={<LogoutOutlined />}
+          disabled={isLoggingOut}
         >
-          Logout
+          {isLoggingOut ? 'Logging out...' : 'Logout'}
         </LogoutButton>
       )
     }
@@ -464,10 +648,11 @@ const HomePage = () => {
               menu={{ items: menuItems }}
               trigger={['click']}
               placement="bottomRight"
+              disabled={isLoggingOut}
             >
               <Button type="text" style={{ color: 'white' }}>
                 <Space>
-                  <Avatar icon={<UserOutlined />} />
+                  <Avatar icon={<UserOutlined />} />  
                   <span>John Doe</span>
                   <DownOutlined />
                 </Space>

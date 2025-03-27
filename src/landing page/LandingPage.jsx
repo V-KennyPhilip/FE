@@ -251,47 +251,49 @@ const LandingPage = () => {
   const { trackEvent } = useAmplitude();
 
   // Check for abandoned auth on component mount
-useEffect(() => {
-  const abandonedAuth = checkAbandonedAuth();
-  
-  if (abandonedAuth) {
-    const minutesSince = Math.floor(
-      (new Date() - new Date(abandonedAuth.timestamp)) / (1000 * 60)
-    );
-
-    trackEvent('Abandoned Auth Detected', {
-      auth_mode: abandonedAuth.auth_mode,
-      minutes_since_abandoned: minutesSince
-    });
-
-    notification.open({
-      message: 'Complete Your Registration',
-      description: (
-        <div>
-          <p>You started {abandonedAuth.auth_mode === 'login' ? 'signing in' : 'creating an account'} {minutesSince} minute{minutesSince !== 1 ? 's' : ''} ago but didn't finish. Complete the process to access your financial portfolio insights!</p>
-          <Button 
-            type="primary" 
-            onClick={() => {
-              trackEvent('Abandoned Auth Notification Clicked', {
-                auth_mode: abandonedAuth.auth_mode
-              });
-              navigate('/auth');
-            }}
-            style={{ marginTop: '8px' }}
-          >
-            Continue {abandonedAuth.auth_mode === 'login' ? 'Login' : 'Signup'}
-          </Button>
-        </div>
-      ),
-      duration: 0,
-      placement: 'topRight',
-      onClose: () => {
-        trackEvent('Abandoned Auth Notification Dismissed');
-        clearAbandonedAuth();
-      }
-    });
-  }
-}, []);
+  useEffect(() => {
+    const abandonedAuth = checkAbandonedAuth();
+    
+    if (abandonedAuth) {
+      trackEvent('Abandoned Auth Detected', {
+        auth_mode: abandonedAuth.auth_mode,
+        // Changed from hours to minutes
+        minutes_since_abandoned: (new Date() - new Date(abandonedAuth.timestamp)) / (1000 * 60)
+      });
+      
+      // Show a notification with a button to go back to auth
+      notification.open({
+        message: 'Complete Your Registration',
+        description: (
+          <div>
+            <p>You started {abandonedAuth.auth_mode === 'login' ? 'signing in' : 'creating an account'} but didn't finish. Complete the process to access your financial portfolio insights!</p>
+            <Button 
+              type="primary" 
+              onClick={() => {
+                // Track the click on the notification
+                trackEvent('Abandoned Auth Notification Clicked', {
+                  auth_mode: abandonedAuth.auth_mode
+                });
+                
+                // Navigate to auth page
+                navigate('/auth');
+              }}
+              style={{ marginTop: '8px' }}
+            >
+              Continue {abandonedAuth.auth_mode === 'login' ? 'Login' : 'Signup'}
+            </Button>
+          </div>
+        ),
+        duration: 0, // Don't auto-close
+        placement: 'topRight',
+        onClose: () => {
+          // Track dismissal and clear the stored auth data
+          trackEvent('Abandoned Auth Notification Dismissed');
+          clearAbandonedAuth();
+        }
+      });
+    }
+  }, []);
   
   // Mock loan statistics with animation
   useEffect(() => {

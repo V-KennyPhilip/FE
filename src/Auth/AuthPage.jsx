@@ -1252,6 +1252,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAmplitude } from '../Context/AmplitudeContext';
+import { setLoginTimestamp, clearAbandonedAuth } from '../utils/authTracking';
+
 import { 
   Row, 
   Col, 
@@ -1264,7 +1266,8 @@ import {
   Divider, 
   message, 
   Space, 
-  Image 
+  Image,
+  Alert
 } from 'antd';
 import { MailOutlined, PhoneOutlined, UserOutlined, LockOutlined } from '@ant-design/icons';
 
@@ -1288,6 +1291,13 @@ const AuthPage = () => {
   
   const location = useLocation();
   const navigate = useNavigate();
+
+  const [formErrors, setFormErrors] = useState({});
+  const [loginAttempts, setLoginAttempts] = useState(0);
+  const [showSwitchToLogin, setShowSwitchToLogin] = useState(false);
+  const [showSwitchToSignup, setShowSwitchToSignup] = useState(false);
+  const [rateLimited, setRateLimited] = useState(false);
+  const [cooldownTimer, setCooldownTimer] = useState(0);
 
   // Feature carousel data
   const features = [
@@ -1318,6 +1328,8 @@ const AuthPage = () => {
       trackEvent('Logout Success');
     }
   }, []);
+
+  
 
   // Track when user switches between login and signup
   const handleAuthToggle = () => {
@@ -1350,9 +1362,43 @@ const AuthPage = () => {
     }
   };
 
+  const startCooldownTimer = (seconds) => {
+    setCooldownTimer(seconds);
+    const interval = setInterval(() => {
+      setCooldownTimer(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setRateLimited(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+  
+  const handleResetPassword = () => {
+    navigate('/reset-password', { state: { email: form.getFieldValue('email') } });
+  };
+  
+  const renderPasswordRequirements = () => {
+    return (
+      <div style={{ marginBottom: '1rem', color: '#bfdbfe' }}>
+        <Text style={{ color: '#bfdbfe', fontSize: '0.9rem' }}>Password must contain:</Text>
+        <ul style={{ paddingLeft: '1.5rem', margin: '0.5rem 0' }}>
+          <li>At least one uppercase letter</li>
+          <li>At least one lowercase letter</li>
+          <li>At least one special character</li>
+        </ul>
+      </div>
+    );
+  };
+  
+  const showPasswordRequirements = !isLogin && form.getFieldValue('password');
+
   // Handle form submission
   const handleSubmit = async (values) => {
     setIsLoading(true);
+    setFormErrors({}); // Clear previous form errors
     
     // Track form submission attempt
     trackEvent(`${isLogin ? 'Login' : 'Signup'} Attempted`, {
@@ -1364,7 +1410,7 @@ const AuthPage = () => {
     const endpoint = isLogin 
       ? 'http://localhost:8080/api/login'
       : 'http://localhost:8080/api/signup';
-  
+
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -1372,27 +1418,82 @@ const AuthPage = () => {
         credentials: 'include',
         body: JSON.stringify(values)
       });
-  
+
       const data = await response.json();
-  
+
+      // Handle different error scenarios based on status codes
       if (!response.ok) {
-        // Show error message
-        message.error(data.message || 'Authentication failed.');
-        
         // Track authentication failure
         trackEvent(`${isLogin ? 'Login' : 'Signup'} Failed`, {
           error_message: data.message || 'Authentication failed.',
+          error_code: response.status,
+          service: data.service || 'unknown',
           auth_mode: isLogin ? 'login' : 'signup'
         });
+        
+        // Handle specific HTTP status codes and messages
+        switch (response.status) {
+          case 400: // Bad request - validation errors
+            // Check for specific error messages from the backend
+            if (data.message === "Invalid Password") {
+              message.error('Incorrect password. Please try again.');
+              setLoginAttempts(prev => prev + 1);
+            } else if (data.message === "User doesn't exist. Please SignUp") {
+              message.error('No account found with this email. Please sign up first.');
+              setShowSwitchToSignup(true);
+            } else if (data.message === "ERROR: INVALID DATA!" && data.data) {
+              // Handle field-specific validation errors
+              setFormErrors(data.data);
+              message.error('Please check your information and try again.');
+            } else {
+              // Generic validation error
+              message.error(data.message || 'Invalid information provided.');
+            }
+            break;
+            
+          case 401: // Unauthorized - wrong credentials
+            if (isLogin) {
+              message.error('Incorrect email or password. Please try again.');
+              // Increment failed login attempt counter
+              setLoginAttempts(prev => prev + 1);
+            } else {
+              message.error(data.message || 'Authentication failed.');
+            }
+            break;
+            
+          case 409: // Conflict - user already exists during signup
+            if (!isLogin && data.message === "User Already Exists!!") {
+              message.error('An account with this email already exists. Please log in instead.');
+              // Option to switch to login
+              setShowSwitchToLogin(true);
+            } else {
+              message.error(data.message || 'Authentication failed.');
+            }
+            break;
+            
+          case 429: // Too many requests
+            message.error('Too many attempts. Please try again later.');
+            setRateLimited(true);
+            // Start cooldown timer
+            startCooldownTimer(data.retryAfter || 60);
+            break;
+            
+          default:
+            message.error(data.message || 'Authentication failed. Please try again.');
+        }
         
         setIsLoading(false);
         return;
       }
-  
+
+      // Success handling (login or signup)
       if (isLogin) {
         // Set user ID and properties in Amplitude
         if (data.user && data.user.id) {
           setUserId(data.user.id);
+          
+          // Store login timestamp using the utility function
+          setLoginTimestamp(data.user.id);
           
           // Set user properties (avoiding sensitive information)
           setUserProperties({
@@ -1403,14 +1504,15 @@ const AuthPage = () => {
           });
         }
         
-        // Clear the form started flag from localStorage
-        localStorage.removeItem('auth_form_started');
+        // Clear the form started flag
+        clearAbandonedAuth();
         
         message.success(data.message || 'Login successful!');
         
         // Track successful login
         trackEvent('Login Success', {
-          user_id: data.user?.id
+          user_id: data.user?.id,
+          login_timestamp: new Date().toISOString()
         });
         
         // Navigate to home page after a short delay
@@ -1436,11 +1538,20 @@ const AuthPage = () => {
 
     } catch (error) {
       console.error('Error sending request:', error);
-      message.error('An unexpected error occurred.');
+      
+      // Handle network errors
+      if (!navigator.onLine) {
+        message.error('You appear to be offline. Please check your internet connection and try again.');
+      } else if (error.name === 'AbortError') {
+        message.error('Request timed out. Please try again.');
+      } else {
+        message.error('An unexpected error occurred. Please try again later.');
+      }
       
       // Track error
       trackEvent(`${isLogin ? 'Login' : 'Signup'} Error`, {
         error_message: error.message,
+        error_type: error.name,
         auth_mode: isLogin ? 'login' : 'signup'
       });
     } finally {
@@ -1467,6 +1578,162 @@ const AuthPage = () => {
     borderRadius: 8,
     color: '#ffffff'
   };
+  <Form
+    form={form}
+    name="auth_form"
+    onFinish={handleSubmit}
+    layout="vertical"
+    requiredMark={false}
+    onValuesChange={handleFormInteraction}
+  >
+    {showSwitchToSignup && isLogin && (
+      <Alert
+        message="Account Not Found"
+        description="No account found with this email."
+        type="info"
+        showIcon
+        action={
+          <Button size="small" type="primary" onClick={() => { setIsLogin(false); setShowSwitchToSignup(false); }}>
+            Create Account
+          </Button>
+        }
+        style={{ marginBottom: '1rem' }}
+      />
+    )}
+    
+    {showSwitchToLogin && !isLogin && (
+      <Alert
+        message="Account Already Exists"
+        description="An account with this email already exists."
+        type="info"
+        showIcon
+        action={
+          <Button size="small" type="primary" onClick={() => { setIsLogin(true); setShowSwitchToLogin(false); }}>
+            Switch to Login
+          </Button>
+        }
+        style={{ marginBottom: '1rem' }}
+      />
+    )}
+    
+    {rateLimited && cooldownTimer > 0 && (
+      <Alert
+        message="Too Many Attempts"
+        description={`Please wait ${cooldownTimer} seconds before trying again.`}
+        type="warning"
+        showIcon
+        style={{ marginBottom: '1rem' }}
+      />
+    )}
+    
+    <Form.Item
+      name="email"
+      rules={[
+        { required: true, message: 'Please input your email!' },
+        { type: 'email', message: 'Please enter a valid email!' }
+      ]}
+      validateStatus={formErrors.email ? 'error' : undefined}
+      help={formErrors.email}
+    >
+      <Input 
+        prefix={<MailOutlined style={{ color: '#60a5fa' }} />} 
+        placeholder="Email Address"
+        style={inputStyle}
+        className="auth-input"
+      />
+    </Form.Item>
+
+    {!isLogin && (
+      <>
+        <Form.Item
+          name="name"
+          rules={[{ required: true, message: 'Please input your name!' }]}
+          validateStatus={formErrors.name ? 'error' : undefined}
+          help={formErrors.name}
+        >
+          <Input 
+            prefix={<UserOutlined style={{ color: '#60a5fa' }} />} 
+            placeholder="Full Name"
+            style={inputStyle}
+            className="auth-input"
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="phone"
+          rules={[
+            { required: true, message: 'Please input your phone number!' },
+            { 
+              pattern: /^[6-9]\d{9}$/,
+              message: 'Phone number must be 10 digits and start with 6, 7, 8, or 9!'
+            }
+          ]}
+          validateStatus={formErrors.phone ? 'error' : undefined}
+          help={formErrors.phone}
+        >
+          <Input 
+            prefix={<PhoneOutlined style={{ color: '#60a5fa' }} />} 
+            placeholder="Phone Number"
+            style={inputStyle}
+            className="auth-input"
+          />
+        </Form.Item>
+      </>
+    )}
+
+    <Form.Item
+      name="password"
+      rules={[
+        { required: true, message: 'Please input your password!' },
+        { 
+          pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*])/,
+          message: 'Password must contain at least one uppercase letter, one lowercase letter, and one special character!'
+        }
+      ]}
+      validateStatus={formErrors.password ? 'error' : undefined}
+      help={formErrors.password}
+    >
+      <Input.Password 
+        prefix={<LockOutlined style={{ color: '#60a5fa' }} />} 
+        placeholder="Password"
+        style={inputStyle}
+        className="auth-input"
+      />
+    </Form.Item>
+    
+    {!isLogin && showPasswordRequirements && renderPasswordRequirements()}
+
+    <Form.Item>
+      <Button 
+        type="primary" 
+        htmlType="submit" 
+        style={{ 
+          width: '100%',
+          height: '2.5rem',
+          background: 'linear-gradient(to right, #2563eb, #4f46e5)',
+          borderRadius: 8
+        }}
+        loading={isLoading}
+      >
+        {isLogin ? 'Login' : 'Create Account'}
+      </Button>
+    </Form.Item>
+
+    <Divider style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }} />
+
+    <div style={{ textAlign: 'center' }}>
+      <Text style={{ color: '#bfdbfe' }}>
+        {isLogin ? "Don't have an account? " : 'Already have an account? '}
+        <Button 
+          type="link" 
+          onClick={handleAuthToggle}
+          style={{ color: '#60a5fa', padding: 0 }}
+        >
+          {isLogin ? 'Sign Up' : 'Login'}
+        </Button>
+      </Text>
+    </div>
+  </Form>
 
   // More visible placeholder style
   const placeholderStyle = {

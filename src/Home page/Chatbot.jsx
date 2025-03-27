@@ -841,6 +841,18 @@ const Chatbot = () => {
   const [popupMessage, setPopupMessage] = useState('');
   const [popupTitle, setPopupTitle] = useState('Action Required');  
 
+  // At the top of Chatbot component
+  // const { trackPageView } = useAmplitude();
+
+  // useEffect(() => {
+  //   if (isOpen) {
+  //     trackPageView('Chatbot Opened', {
+  //       userId,
+  //       initialMessageCount: messages.length
+  //     });
+  //   }
+  // }, [isOpen]);
+
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
   };
@@ -1026,7 +1038,7 @@ const fetchResponse = async (promptId, requestData = null, requestType = 'GET', 
       // Also add a bot message to indicate the action
       setMessages(prev => [...prev, { 
         type: 'bot', 
-        text: `To ${actionType}, please visit our ${actionType.split(' ')[0]} page.`,
+        text: `To "${actionType}", please visit our ${actionType.split(' ')[0]} page.`,
         followups: [] 
       }]);
     } else {
